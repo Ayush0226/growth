@@ -1,0 +1,31 @@
+[project]
+name = "business-growth-platform-backend"
+version = "0.1.0"
+description = "FastAPI backend for the Instagram publishing MVP"
+requires-python = ">=3.11"
+dependencies = [
+  "cryptography>=46.0.1",
+  "fastapi>=0.118.0",
+  "httpx>=0.28.1",
+  "pydantic-settings>=2.11.0",
+  "pillow>=11.3.0",
+  "python-multipart>=0.0.20",
+  "supabase>=2.20.0",
+  "uvicorn[standard]>=0.37.0"
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.4.2", "pytest-asyncio>=1.2.0", "ruff>=0.13.3"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+ignore = ["B008"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["supabase*", "tests*"]
