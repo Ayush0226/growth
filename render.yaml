@@ -2,6 +2,7 @@ services:
   - type: web
     name: business-growth-platform-api
     runtime: python
+    plan: free
     rootDir: business-growth-platform-backend
     buildCommand: pip install -e .
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --no-access-log
