@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     meta_app_id: str
     meta_app_secret: str
+    meta_webhook_app_secret: str | None = None
     meta_graph_api_version: str
     instagram_redirect_uri: HttpUrl
     supabase_url: HttpUrl

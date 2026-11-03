@@ -40,7 +40,7 @@ The backend also processes due work every 30 seconds while running. The hosted t
    `https://business-growth-platform-api.onrender.com/api/integrations/instagram/callback`
 2. Configure Instagram webhooks at:
    `https://business-growth-platform-api.onrender.com/api/instagram/webhook`
-3. Use `INSTAGRAM_WEBHOOK_VERIFY_TOKEN` from the backend environment for GET verification. Event signatures are checked with `META_APP_SECRET`.
+3. Use `INSTAGRAM_WEBHOOK_VERIFY_TOKEN` from the backend environment for GET verification. Event signatures are checked with `META_WEBHOOK_APP_SECRET` when configured, otherwise `META_APP_SECRET`. Use the Meta application secret for webhook signatures; a separately issued Instagram Login secret may differ.
 4. Subscribe the Meta app to `messages` and `comments`. In development mode, use an approved Instagram tester and a professional account.
 5. Reconnect in Growthboard and grant comments/messaging. Then click **Enable event delivery** in Connections to subscribe that Instagram account to the app.
 6. Create a paused rule, review its exact text and target posts, and enable it when ready.

@@ -228,7 +228,9 @@ async def receive_webhook(request: Request, settings: Settings = Depends(get_set
         if len(body) > 1024 * 1024:
             raise HTTPException(413, "Webhook payload is too large")
     if not valid_signature(
-        body, request.headers.get("x-hub-signature-256", ""), settings.meta_app_secret
+        body,
+        request.headers.get("x-hub-signature-256", ""),
+        settings.meta_webhook_app_secret or settings.meta_app_secret,
     ):
         raise HTTPException(403, "Invalid webhook signature")
     try:

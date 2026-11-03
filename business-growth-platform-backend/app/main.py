@@ -32,7 +32,7 @@ async def lifespan(_: FastAPI):
                 await task
 
 
-app = FastAPI(title="Growthboard API", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Growthboard API", version="0.2.1", lifespan=lifespan)
 settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
@@ -96,9 +96,9 @@ def readiness():
         )
         return {
             "status": "ready" if scheduler else "migration_required",
-            "version": "0.2.0",
+            "version": "0.2.1",
             "scheduler": scheduler or {},
             "background_worker_enabled": settings.scheduler_enabled,
         }
     except Exception:  # noqa: BLE001 - readiness reports a redacted dependency status
-        return JSONResponse(status_code=503, content={"status": "not_ready", "version": "0.2.0"})
+        return JSONResponse(status_code=503, content={"status": "not_ready", "version": "0.2.1"})
