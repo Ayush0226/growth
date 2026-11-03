@@ -2,13 +2,17 @@ from functools import lru_cache
 from typing import Any
 
 from app.config import get_settings
-from supabase import Client, create_client
+from supabase import Client, ClientOptions, create_client
 
 
 @lru_cache
 def db() -> Client:
     settings = get_settings()
-    return create_client(str(settings.supabase_url), settings.supabase_service_role_key)
+    return create_client(
+        str(settings.supabase_url),
+        settings.supabase_service_role_key,
+        options=ClientOptions(postgrest_client_timeout=10, storage_client_timeout=20),
+    )
 
 
 def one(result: Any) -> dict[str, Any] | None:

@@ -1,14 +1,77 @@
 import asyncio
 import logging
+import traceback
 import uuid
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 
 from app.automations import process_event
 from app.config import Settings
-from app.database import db
+from app.database import db, one
 from app.publishing import publish_job
 
 logger = logging.getLogger(__name__)
+
+
+def renew_lease(holder: str) -> bool:
+    return bool(
+        db()
+        .table("scheduler_leases")
+        .update({"expires_at": (datetime.now(UTC) + timedelta(minutes=2)).isoformat()})
+        .eq("name", "mvp")
+        .eq("holder", holder)
+        .execute()
+        .data
+    )
+
+
+async def keep_lease(holder: str, lost: asyncio.Event):
+    while True:
+        await asyncio.sleep(20)
+        try:
+            if not await asyncio.to_thread(renew_lease, holder):
+                lost.set()
+                return
+        except Exception:
+            # Stop claiming new work when ownership cannot be confirmed.
+            lost.set()
+            logger.warning("Worker lease renewal failed")
+            return
+
+
+def finish_interrupted(event: dict, exc: Exception):
+    delivery = one(
+        db()
+        .table("automation_deliveries")
+        .select("id,status")
+        .eq("event_id", event["id"])
+        .limit(1)
+        .execute()
+    )
+    sent = delivery and delivery["status"] == "sent"
+    if delivery and delivery["status"] == "sending":
+        db().table("automation_deliveries").update(
+            {
+                "status": "uncertain",
+                "detail": "Processing stopped before delivery could be confirmed. Check Instagram before sending again.",
+            }
+        ).eq("id", delivery["id"]).eq("status", "sending").execute()
+    db().table("automation_events").update(
+        {
+            "status": "processed" if sent else "failed",
+            "detail": "Reply sent"
+            if sent
+            else (
+                "Processing interrupted; check reply deliveries before sending again"
+                if delivery
+                else "Processing was interrupted before a reply was created. Send a new message or comment to try again."
+            ),
+            "processed_at": datetime.now(UTC).isoformat(),
+        }
+    ).eq("id", event["id"]).execute()
+    # Include the exception type and locations, never exception text, tokens or request URLs.
+    locations = [(frame.name, frame.lineno) for frame in traceback.extract_tb(exc.__traceback__)]
+    logger.warning("Event %s failed: %s at %s", event["id"], type(exc).__name__, locations)
 
 
 async def run_pending(settings: Settings) -> dict:
@@ -19,7 +82,12 @@ async def run_pending(settings: Settings) -> dict:
     if acquired is not True:
         return {"status": "busy", "published": 0, "events": 0}
     result = {"status": "completed", "published": 0, "events": 0, "failures": 0}
+    lost = asyncio.Event()
+    heartbeat = None
     try:
+        if not await asyncio.to_thread(renew_lease, holder):
+            return {"status": "busy", "published": 0, "events": 0}
+        heartbeat = asyncio.create_task(keep_lease(holder, lost))
         jobs = await asyncio.to_thread(
             lambda: (
                 db()
@@ -34,6 +102,9 @@ async def run_pending(settings: Settings) -> dict:
             )
         )
         for job in jobs:
+            if lost.is_set():
+                result["status"] = "interrupted"
+                break
             if datetime.fromisoformat(job["scheduled_for"]) < datetime.now(UTC) - timedelta(days=1):
                 await asyncio.to_thread(
                     lambda job=job: (
@@ -55,7 +126,11 @@ async def run_pending(settings: Settings) -> dict:
                 result["failures"] += 1
                 continue
             try:
-                await publish_job(job["id"], job["workspace_id"], settings)
+                await asyncio.to_thread(
+                    lambda job=job: asyncio.run(
+                        publish_job(job["id"], job["workspace_id"], settings)
+                    )
+                )
                 result["published"] += 1
             except Exception:  # noqa: BLE001 - persist per-job failures without stopping the batch
                 result["failures"] += 1
@@ -73,29 +148,17 @@ async def run_pending(settings: Settings) -> dict:
             )
         )
         for event in events:
+            if lost.is_set():
+                result["status"] = "interrupted"
+                break
             try:
                 await asyncio.to_thread(
                     lambda event=event: asyncio.run(process_event(event, settings))
                 )
                 result["events"] += 1
-            except Exception:  # noqa: BLE001 - do not replay interrupted public sends
-                # A persisted delivery may already exist. Never retry blindly.
-                await asyncio.to_thread(
-                    lambda event=event: (
-                        db()
-                        .table("automation_events")
-                        .update(
-                            {
-                                "status": "failed",
-                                "detail": "Processing interrupted; inspect delivery activity before retrying",
-                            }
-                        )
-                        .eq("id", event["id"])
-                        .execute()
-                    )
-                )
+            except Exception as exc:  # noqa: BLE001 - reconcile without replaying public sends
+                await asyncio.to_thread(finish_interrupted, event, exc)
                 result["failures"] += 1
-                logger.warning("Automation processing failed for event %s", event["id"])
         await asyncio.to_thread(
             lambda: (
                 db()
@@ -107,6 +170,10 @@ async def run_pending(settings: Settings) -> dict:
         )
         return result
     finally:
+        if heartbeat:
+            heartbeat.cancel()
+            with suppress(asyncio.CancelledError):
+                await heartbeat
         await asyncio.to_thread(
             lambda: (
                 db()

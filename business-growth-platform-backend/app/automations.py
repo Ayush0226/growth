@@ -318,11 +318,12 @@ async def process_event(event: dict, settings: Settings) -> None:
         ).eq("id", delivery["id"]).execute()
         finish("failed", "Uncertain delivery; no automatic retry")
         return
-    except MetaAPIError:
+    except MetaAPIError as exc:
+        reason = str(exc).replace(token, "[redacted]")[:400]
         db().table("automation_deliveries").update(
             {
                 "status": "failed",
-                "detail": "Instagram rejected the reply. Check connection, permissions and message window.",
+                "detail": "Instagram rejected the reply: " + reason,
             }
         ).eq("id", delivery["id"]).execute()
         finish("failed", "Reply rejected; inspect Instagram before retrying")
