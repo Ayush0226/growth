@@ -10,7 +10,6 @@ MVP_SCOPES = (
     "instagram_business_content_publish",
     "instagram_business_manage_comments",
     "instagram_business_manage_messages",
-    "instagram_business_manage_insights",
 )
 
 
@@ -29,13 +28,17 @@ class InstagramClient:
     def __init__(self, settings: Settings):
         self.settings = settings
 
-    def authorization_url(self, state: str) -> str:
+    def authorization_url(self, state: str, include_insights: bool = False) -> str:
         query = urlencode(
             {
                 "client_id": self.settings.meta_app_id,
                 "redirect_uri": str(self.settings.instagram_redirect_uri),
                 "response_type": "code",
-                "scope": ",".join(MVP_SCOPES),
+                "scope": ",".join(
+                    (*MVP_SCOPES, "instagram_business_manage_insights")
+                    if include_insights
+                    else MVP_SCOPES
+                ),
                 "state": state,
                 "enable_fb_login": "0",
                 "force_authentication": "1",
@@ -56,7 +59,15 @@ class InstagramClient:
                 },
             )
         data = self._json(response)
-        raw_permissions = data.get("permissions") or data.get("scope")
+        if (
+            "access_token" not in data
+            and isinstance(data.get("data"), list)
+            and len(data["data"]) == 1
+        ):
+            data = data["data"][0]
+        raw_permissions = (
+            data.get("permissions") or data.get("scope") or data.get("granted_permissions")
+        )
         if isinstance(raw_permissions, str):
             permissions = {item for item in raw_permissions.split(",") if item}
         elif isinstance(raw_permissions, list):
@@ -125,6 +136,26 @@ class InstagramClient:
             )
         if response.status_code >= 400:
             raise MetaAPIError("Meta authorization could not be revoked")
+
+    async def permissions(self, token: str) -> set[str]:
+        result = await self.get("me/permissions", token)
+        return {
+            item["permission"]
+            for item in result.get("data", [])
+            if item.get("status") == "granted" and item.get("permission")
+        }
+
+    async def subscribe(self, account_id: str, token: str, permissions: set[str]) -> dict:
+        fields = []
+        if "instagram_business_manage_messages" in permissions:
+            fields.append("messages")
+        if "instagram_business_manage_comments" in permissions:
+            fields.append("comments")
+        if not fields:
+            raise MetaAPIError("Messaging or comment permission is required for events")
+        return await self.post(
+            f"{account_id}/subscribed_apps", token, subscribed_fields=",".join(fields)
+        )
 
     @staticmethod
     def _json(response: httpx.Response) -> dict:

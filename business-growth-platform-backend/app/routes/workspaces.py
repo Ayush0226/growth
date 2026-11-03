@@ -11,6 +11,19 @@ class WorkspaceCreate(BaseModel):
     name: str = Field(min_length=2, max_length=100)
 
 
+@router.get("")
+def workspace_status(user: CurrentUser = Depends(current_user)):
+    member = one(
+        db()
+        .table("workspace_members")
+        .select("workspace_id,workspaces(name)")
+        .eq("user_id", user.id)
+        .limit(1)
+        .execute()
+    )
+    return {"workspace": member}
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_workspace(payload: WorkspaceCreate, user: CurrentUser = Depends(current_user)) -> dict:
     existing = one(

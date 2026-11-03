@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 
-const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+const baseUrl = (import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8000' : 'https://business-growth-platform-api.onrender.com')).replace(/\/$/, '')
 
 export type InstagramConnection = {
   connected: boolean
@@ -11,25 +11,45 @@ export type InstagramConnection = {
   messages_enabled?: boolean
   insights_enabled?: boolean
   granted_permissions?: string[]
+  provider_account_id?: string
+  token_expires_at?: string
+  webhook_subscribed?: boolean
+  webhook_error?: string
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const { data } = await supabase.auth.getSession()
   if (!data.session) throw new Error('Please sign in again.')
-  const response = await fetch(`${baseUrl}${path}`, {
+  const send = (token: string) => fetch(`${baseUrl}${path}`, {
     ...init,
-    headers: { ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), Authorization: `Bearer ${data.session.access_token}`, ...init?.headers },
+    headers: { ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), Authorization: `Bearer ${token}`, ...init?.headers },
   })
+  let response = await send(data.session.access_token)
+  if (response.status === 401) {
+    const refreshed = await supabase.auth.refreshSession()
+    if (refreshed.error || !refreshed.data.session) throw new Error('Your session expired. Please sign in again.')
+    response = await send(refreshed.data.session.access_token)
+  }
   const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(body.detail ?? 'Request failed')
+  if (!response.ok) {
+    const detail = Array.isArray(body.detail) ? body.detail.map((item: {msg?: string}) => item.msg || String(item)).join('; ') : body.detail
+    throw new Error(typeof detail === 'string' ? detail : 'Request failed. Please retry.')
+  }
   return body as T
 }
 
 export const api = {
+  workspace: () => request<{workspace: {workspace_id: string, workspaces: {name: string}} | null}>('/api/workspaces'),
   provisionWorkspace: (name: string) => request<{ workspace_id: string }>('/api/workspaces', { method: 'POST', body: JSON.stringify({ name }) }),
   instagramStatus: () => request<InstagramConnection>('/api/integrations/instagram'),
-  instagramConnectUrl: () => request<{ authorization_url: string }>('/api/integrations/instagram/connect', { method: 'POST' }),
+  instagramConnectUrl: (includeInsights = false) => request<{ authorization_url: string }>(`/api/integrations/instagram/connect?include_insights=${includeInsights}`, { method: 'POST' }),
   disconnectInstagram: () => request<{ status: string }>('/api/integrations/instagram/disconnect', { method: 'POST' }),
+  instagramConfiguration: () => request<{redirect_uri: string, webhook_url: string, requested_scopes: string[], scheduler_enabled: boolean}>('/api/integrations/instagram/configuration'),
+  subscribeInstagram: () => request<{subscribed: boolean}>('/api/integrations/instagram/subscribe', {method: 'POST'}),
+  automationRules: () => request<{items: AutomationRule[]}>('/api/automations'),
+  saveAutomationRule: (rule: AutomationInput, id?: string) => request<AutomationRule>(id ? `/api/automations/${id}` : '/api/automations', {method: id ? 'PUT' : 'POST', body: JSON.stringify(rule)}),
+  automationActivity: () => request<AutomationActivity>('/api/automations/activity'),
+  previewAutomation: (text: string, keywords: string[]) => request<{matched: boolean}>('/api/automations/preview', {method: 'POST', body: JSON.stringify({text,keywords})}),
   uploadMedia: (file: File) => { const body = new FormData(); body.append('file', file); return request<{ id: string, width: number, height: number }>('/api/media', { method: 'POST', body }) },
   createPost: (payload: { caption: string, media_asset_id: string, scheduled_for?: string, timezone: string, approved: boolean, publish_now: boolean }) => request<{ job: CalendarItem }>('/api/content/posts', { method: 'POST', body: JSON.stringify(payload) }),
   calendar: () => request<{ items: CalendarItem[] }>('/api/content/calendar'),
@@ -46,6 +66,10 @@ export const api = {
   sendMessage: (recipientId:string,message:string) => request(`/api/instagram/messages/${recipientId}`,{method:'POST',body:JSON.stringify({message})}),
   insights: () => request<Insights>('/api/instagram/insights'),
 }
+
+export type AutomationInput = {name: string; trigger: 'welcome' | 'dm_keyword' | 'comment_keyword'; keywords: string[]; media_ids: string[]; reply_text: string; enabled: boolean; daily_limit: number; cooldown_minutes: number}
+export type AutomationRule = AutomationInput & {id: string; created_at: string}
+export type AutomationActivity = {events: {id:string;kind:string;status:string;detail?:string;received_at:string}[];deliveries:{id:string;rule_id:string;status:string;reply_text:string;detail?:string;created_at:string}[]}
 
 export type InstagramMedia={id:string;caption?:string;media_url?:string;thumbnail_url?:string;permalink:string;timestamp:string;comments_count?:number;like_count?:number}
 export type InstagramComment={id:string;text:string;timestamp:string;username:string;like_count?:number;hidden?:boolean;replies?:{data:InstagramComment[]}}

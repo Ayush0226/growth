@@ -6,12 +6,14 @@ services:
     rootDir: business-growth-platform-backend
     buildCommand: pip install -e .
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --no-access-log
-    healthCheckPath: /health
+    healthCheckPath: /health/ready
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: ENVIRONMENT
         value: production
+      - key: SCHEDULER_ENABLED
+        value: true
       - key: META_APP_ID
         sync: false
       - key: META_APP_SECRET

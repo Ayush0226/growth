@@ -1,6 +1,7 @@
 import logging
 from datetime import UTC, datetime, timedelta
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
 
@@ -41,7 +42,9 @@ def connection_status(user: CurrentUser = Depends(current_user)) -> dict:
     connection = one(
         db()
         .table("social_connections")
-        .select("id,status,granted_scopes")
+        .select(
+            "id,status,granted_scopes,token_expires_at,webhook_subscribed,webhook_error,active_account_id"
+        )
         .eq("workspace_id", workspace_id)
         .eq("provider", "instagram")
         .eq("status", "active")
@@ -54,8 +57,9 @@ def connection_status(user: CurrentUser = Depends(current_user)) -> dict:
         one(
             db()
             .table("social_accounts")
-            .select("username,account_type")
+            .select("username,account_type,provider_account_id")
             .eq("connection_id", connection["id"])
+            .order("updated_at", desc=True)
             .limit(1)
             .execute()
         )
@@ -65,6 +69,9 @@ def connection_status(user: CurrentUser = Depends(current_user)) -> dict:
     return {
         "connected": True,
         **account,
+        "token_expires_at": connection.get("token_expires_at"),
+        "webhook_subscribed": connection.get("webhook_subscribed", False),
+        "webhook_error": connection.get("webhook_error"),
         "granted_permissions": scopes,
         "publishing_enabled": "instagram_business_content_publish" in scopes,
         "comments_enabled": "instagram_business_manage_comments" in scopes,
@@ -75,7 +82,9 @@ def connection_status(user: CurrentUser = Depends(current_user)) -> dict:
 
 @router.post("/connect")
 def connect(
-    user: CurrentUser = Depends(current_user), settings: Settings = Depends(get_settings)
+    user: CurrentUser = Depends(current_user),
+    settings: Settings = Depends(get_settings),
+    include_insights: bool = False,
 ) -> dict:
     workspace_id = user_workspace(user.id)
     raw_state, state_hash = generate_oauth_state()
@@ -88,7 +97,75 @@ def connect(
             "expires_at": (datetime.now(UTC) + timedelta(minutes=10)).isoformat(),
         }
     ).execute()
-    return {"authorization_url": InstagramClient(settings).authorization_url(raw_state)}
+    return {
+        "authorization_url": InstagramClient(settings).authorization_url(
+            raw_state, include_insights
+        )
+    }
+
+
+@router.get("/configuration")
+def configuration(
+    user: CurrentUser = Depends(current_user), settings: Settings = Depends(get_settings)
+):
+    callback = str(settings.instagram_redirect_uri)
+    return {
+        "redirect_uri": callback,
+        "webhook_url": callback.rsplit("/", 1)[0].replace("/integrations/instagram", "/instagram")
+        + "/webhook",
+        "requested_scopes": list(MVP_SCOPES),
+        "scheduler_enabled": settings.scheduler_enabled,
+    }
+
+
+@router.post("/subscribe")
+async def subscribe(
+    user: CurrentUser = Depends(current_user), settings: Settings = Depends(get_settings)
+):
+    workspace = user_workspace(user.id)
+    connection = one(
+        db()
+        .table("social_connections")
+        .select("*")
+        .eq("workspace_id", workspace)
+        .eq("status", "active")
+        .execute()
+    )
+    if not connection:
+        raise HTTPException(409, "Connect Instagram first")
+    account = one(
+        db()
+        .table("social_accounts")
+        .select("provider_account_id")
+        .eq("connection_id", connection["id"])
+        .order("updated_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    try:
+        result = await InstagramClient(settings).subscribe(
+            account["provider_account_id"],
+            TokenCipher(settings.token_encryption_key).decrypt(
+                connection["access_token_encrypted"]
+            ),
+            set(connection["granted_scopes"]),
+        )
+        if not result.get("success"):
+            raise MetaAPIError("Instagram did not confirm the subscription")
+    except (MetaAPIError, httpx.HTTPError):
+        db().table("social_connections").update(
+            {
+                "webhook_subscribed": False,
+                "webhook_error": "Check Meta Instagram webhook configuration and reconnect permissions.",
+            }
+        ).eq("id", connection["id"]).execute()
+        raise HTTPException(
+            409, "Instagram event subscription failed. Check Meta webhook settings and permissions."
+        ) from None
+    db().table("social_connections").update({"webhook_subscribed": True, "webhook_error": None}).eq(
+        "id", connection["id"]
+    ).execute()
+    return {"subscribed": True}
 
 
 @router.get("/callback")
@@ -113,9 +190,16 @@ async def callback(
     saved = one(query)
     if not saved or datetime.fromisoformat(saved["expires_at"]) < datetime.now(UTC):
         return RedirectResponse(f"{frontend}/settings/connections?instagram=invalid_state")
-    db().table("oauth_states").update({"consumed_at": datetime.now(UTC).isoformat()}).eq(
-        "id", saved["id"]
-    ).execute()
+    consumed = (
+        db()
+        .table("oauth_states")
+        .update({"consumed_at": datetime.now(UTC).isoformat()})
+        .is_("consumed_at", "null")
+        .eq("id", saved["id"])
+        .execute()
+    )
+    if not consumed.data:
+        return RedirectResponse(f"{frontend}/settings/connections?instagram=invalid_state")
     if error or not code:
         outcome = "cancelled" if error_reason == "user_denied" else "failed"
         return RedirectResponse(f"{frontend}/settings/connections?instagram={outcome}")
@@ -124,7 +208,13 @@ async def callback(
         short = await client.exchange_code(code)
         token, expires_in = await client.exchange_long_lived(short.access_token)
         profile = await client.profile(token)
-        permissions = short.permissions or set(MVP_SCOPES)
+        if short.permissions is not None:
+            permissions = short.permissions
+        else:
+            try:
+                permissions = await client.permissions(token)
+            except MetaAPIError:
+                permissions = set()
         cipher = TokenCipher(settings.token_encryption_key)
         expires_at = (
             (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat() if expires_in else None
@@ -141,6 +231,9 @@ async def callback(
                     "token_expires_at": expires_at,
                     "granted_scopes": sorted(permissions),
                     "connected_by": saved["user_id"],
+                    "active_account_id": str(
+                        profile.get("user_id") or profile.get("id") or short.user_id
+                    ),
                 },
                 on_conflict="workspace_id,provider",
             )
@@ -165,9 +258,24 @@ async def callback(
                 ),
                 "username": profile.get("username"),
                 "account_type": profile.get("account_type"),
+                "updated_at": datetime.now(UTC).isoformat(),
             },
             on_conflict="connection_id,provider_account_id",
         ).execute()
+        current_id = str(profile.get("user_id") or profile.get("id") or short.user_id)
+        try:
+            subscription = await client.subscribe(current_id, token, permissions)
+            subscribed = subscription.get("success") is True
+        except (MetaAPIError, httpx.HTTPError):
+            subscribed = False
+        db().table("social_connections").update(
+            {
+                "webhook_subscribed": subscribed,
+                "webhook_error": None
+                if subscribed
+                else "Enable messages and comments webhooks in Meta, then retry event delivery.",
+            }
+        ).eq("id", connection["id"]).execute()
         permission_rows = [
             {
                 "workspace_id": saved["workspace_id"],
@@ -191,8 +299,10 @@ async def callback(
                 },
             }
         ).execute()
-    except (MetaAPIError, KeyError, ValueError):
-        logger.exception("Instagram OAuth callback failed")
+    except (MetaAPIError, httpx.HTTPError, KeyError, ValueError):
+        logger.warning(
+            "Instagram OAuth callback failed; check Meta configuration and database migrations"
+        )
         return RedirectResponse(f"{frontend}/settings/connections?instagram=failed")
     outcome = "connected" if "instagram_business_content_publish" in permissions else "limited"
     return RedirectResponse(f"{frontend}/settings/connections?instagram={outcome}")
@@ -215,6 +325,12 @@ async def disconnect(
     )
     if not connection:
         return {"status": "already_disconnected"}
+    db().table("automation_rules").update({"enabled": False}).eq(
+        "workspace_id", workspace_id
+    ).execute()
+    db().table("automation_events").update(
+        {"status": "ignored", "detail": "Instagram disconnected"}
+    ).eq("workspace_id", workspace_id).eq("status", "pending").execute()
     db().table("publishing_jobs").update(
         {"status": "cancelled", "failure_code": "connection_disconnected"}
     ).eq("workspace_id", workspace_id).in_("status", ["scheduled", "processing"]).execute()
@@ -222,14 +338,15 @@ async def disconnect(
         await InstagramClient(settings).revoke(
             TokenCipher(settings.token_encryption_key).decrypt(connection["access_token_encrypted"])
         )
-    except (MetaAPIError, ValueError):
-        logger.warning("Meta revoke failed during disconnect", exc_info=True)
+    except (MetaAPIError, httpx.HTTPError, ValueError):
+        logger.warning("Meta revoke failed during disconnect")
     db().table("social_connections").update(
         {
             "status": "revoked",
             "access_token_encrypted": None,
             "token_expires_at": None,
             "disconnected_at": datetime.now(UTC).isoformat(),
+            "webhook_subscribed": False,
         }
     ).eq("id", connection["id"]).execute()
     db().table("audit_events").insert(
