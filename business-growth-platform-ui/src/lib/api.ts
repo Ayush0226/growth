@@ -14,6 +14,7 @@ export type InstagramConnection = {
   provider_account_id?: string
   token_expires_at?: string
   webhook_subscribed?: boolean
+  last_event_received_at?: string | null
   webhook_error?: string
 }
 
@@ -44,7 +45,6 @@ export const api = {
   instagramStatus: () => request<InstagramConnection>('/api/integrations/instagram'),
   instagramConnectUrl: (includeInsights = false) => request<{ authorization_url: string }>(`/api/integrations/instagram/connect?include_insights=${includeInsights}`, { method: 'POST' }),
   disconnectInstagram: () => request<{ status: string }>('/api/integrations/instagram/disconnect', { method: 'POST' }),
-  instagramConfiguration: () => request<{redirect_uri: string, webhook_url: string, requested_scopes: string[], scheduler_enabled: boolean}>('/api/integrations/instagram/configuration'),
   subscribeInstagram: () => request<{subscribed: boolean}>('/api/integrations/instagram/subscribe', {method: 'POST'}),
   automationRules: () => request<{items: AutomationRule[]}>('/api/automations'),
   saveAutomationRule: (rule: AutomationInput, id?: string) => request<AutomationRule>(id ? `/api/automations/${id}` : '/api/automations', {method: id ? 'PUT' : 'POST', body: JSON.stringify(rule)}),

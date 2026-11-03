@@ -33,15 +33,70 @@ function Dashboard() {
 function Empty({title,action,to}:{title:string,action:string,to:string}){return <div className="empty"><span>◇</span><h3>{title}</h3><Link to={to}>{action} →</Link></div>}
 
 function Connections() {
-  const [includeInsights,setIncludeInsights]=useState(false);const [status,setStatus]=useState<InstagramConnection|null>(null);const [message,setMessage]=useState('');const [busy,setBusy]=useState(false);const [params]=useSearchParams()
-  const [configuration,setConfiguration]=useState<{redirect_uri:string;webhook_url:string}|null>(null)
-  const refresh=()=>api.instagramStatus().then(setStatus).catch(e=>setMessage(e.message))
-  useEffect(()=>{void refresh();api.instagramConfiguration().then(setConfiguration).catch(e=>setMessage(e.message));const outcome=params.get('instagram');if(outcome){const messages:Record<string,string>={connected:'Instagram connected successfully.',limited:'Connected with limited permissions. Reconnect to approve the features you need.',invalid_state:'This connection link expired or was already used. Start Connect Instagram again.',cancelled:'Connection was cancelled.',failed:'Connection failed. Check the Meta callback URI and try again.'};setMessage(messages[outcome]||'Check your Instagram connection.')}},[params])
-  async function connect(){setBusy(true);try{const {authorization_url}=await api.instagramConnectUrl(includeInsights);window.location.assign(authorization_url)}catch(e){setMessage(e instanceof Error?e.message:'Could not connect');setBusy(false)}}
-  async function disconnect(){if(!confirm('Disconnect Instagram, pause automation rules, and cancel pending publications?'))return;setBusy(true);try{await api.disconnectInstagram();setStatus({connected:false});setMessage('Instagram disconnected; rules paused and pending jobs cancelled.')}catch(e){setMessage(e instanceof Error?e.message:'Could not disconnect')}finally{setBusy(false)}}
-  async function subscribe(){setBusy(true);try{await api.subscribeInstagram();setMessage('Instagram event delivery enabled. Send a test DM from another account, then check Automations activity.');await refresh()}catch(e){setMessage(e instanceof Error?e.message:'Could not enable event delivery')}finally{setBusy(false)}}
-  const capability=(label:string,on?:boolean)=><div><dt>{label}</dt><dd className={on?'enabled':'disabled'}>{on?'● Granted':'○ Not granted'}</dd></div>
-  return <Shell><section className="page-heading"><p className="eyebrow">Settings / Connections</p><h1>Connected accounts</h1><p>Connect a professional Instagram account and control its publishing and engagement permissions.</p><label className="check-row"><input type="checkbox" checked={includeInsights} onChange={e=>setIncludeInsights(e.target.checked)}/>Also request optional insights permission when connecting</label></section>{message&&<p className="notice wide" role="status">{message}</p>}<article className="connection card"><div className="ig-mark">IG</div><div><h2>Instagram</h2>{status?.connected?<><p className="status good">Connected · @{status.username}</p><dl>{capability('Publishing',status.publishing_enabled)}{capability('Comments',status.comments_enabled)}{capability('Messages',status.messages_enabled)}{capability('Event subscription',status.webhook_subscribed)}</dl>{status.token_expires_at&&<p>Token expires: {new Date(status.token_expires_at).toLocaleString()}</p>}{status.webhook_error&&<p className="notice">{status.webhook_error}</p>}<div className="actions"><button className="button primary" disabled={busy} onClick={connect}>Reconnect permissions</button><button className="button secondary" disabled={busy||!status.messages_enabled} onClick={subscribe}>Enable event delivery</button><button className="button danger" disabled={busy} onClick={disconnect}>Disconnect</button></div></>:<><p>Create a workspace first, then connect a Business or Creator account.</p><button className="button primary" disabled={busy} onClick={connect}>{busy?'Opening Instagram…':'Connect Instagram'}</button></>}</div></article>{configuration&&<article className="card connection-setup"><h2>Meta app setup</h2><p>These URLs must match your Meta Instagram Login and webhook settings exactly.</p><label>Valid OAuth redirect URI<input readOnly value={configuration.redirect_uri} onFocus={e=>e.target.select()}/></label><label>Instagram webhook callback<input readOnly value={configuration.webhook_url} onFocus={e=>e.target.select()}/></label><p>Subscribe to <b>messages</b> and <b>comments</b> in Meta, then enable event delivery above. Use the verification token from your backend environment. In development mode, use an approved Instagram tester account.</p><a href="https://developers.facebook.com/apps/" target="_blank" rel="noreferrer">Open Meta app settings ↗</a></article>}</Shell>
+  const [includeInsights, setIncludeInsights] = useState(false)
+  const [status, setStatus] = useState<InstagramConnection | null>(null)
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [params] = useSearchParams()
+  const refresh = () => api.instagramStatus().then(setStatus).catch(e => setMessage(e.message))
+  useEffect(() => {
+    void refresh()
+    const timer = setInterval(() => void refresh(), 15000)
+    const outcome = params.get('instagram')
+    if (outcome) {
+      const messages: Record<string, string> = {
+        connected: 'Instagram connected successfully.',
+        limited: 'Connected with limited permissions. Reconnect to approve the features you need.',
+        invalid_state: 'This connection link expired or was already used. Start Connect Instagram again.',
+        cancelled: 'Connection was cancelled.',
+        failed: 'Connection failed. Try connecting again. If this continues, contact support.',
+      }
+      setMessage(messages[outcome] || 'Check your Instagram connection.')
+    }
+    return () => clearInterval(timer)
+  }, [params])
+  async function connect() {
+    setBusy(true)
+    try {
+      const { authorization_url } = await api.instagramConnectUrl(includeInsights)
+      window.location.assign(authorization_url)
+    } catch (e) { setMessage(e instanceof Error ? e.message : 'Could not connect'); setBusy(false) }
+  }
+  async function disconnect() {
+    if (!confirm('Disconnect Instagram, pause automation rules, and cancel pending publications?')) return
+    setBusy(true)
+    try {
+      await api.disconnectInstagram(); setStatus({ connected: false })
+      setMessage('Instagram disconnected; rules paused and pending jobs cancelled.')
+    } catch (e) { setMessage(e instanceof Error ? e.message : 'Could not disconnect') }
+    finally { setBusy(false) }
+  }
+  async function subscribe() {
+    setBusy(true)
+    try {
+      await api.subscribeInstagram()
+      setMessage('Instagram accepted the connection request. Send a new DM from another account to confirm that messages are arriving.')
+      await refresh()
+    } catch { setMessage('Automatic replies could not be connected. Reconnect permissions or contact support.') }
+    finally { setBusy(false) }
+  }
+  const capability = (label: string, on?: boolean) => <div><dt>{label}</dt><dd className={on ? 'enabled' : 'disabled'}>{on ? '● Granted' : '○ Not granted'}</dd></div>
+  return <Shell>
+    <section className="page-heading"><p className="eyebrow">Settings / Connections</p><h1>Connected accounts</h1><p>Connect a professional Instagram account and control its publishing and engagement permissions.</p><label className="check-row"><input type="checkbox" checked={includeInsights} onChange={e => setIncludeInsights(e.target.checked)} />Also request optional insights permission when connecting</label></section>
+    {message && <p className="notice wide" role="status">{message}</p>}
+    <article className="connection card"><div className="ig-mark">IG</div><div><h2>Instagram</h2>
+      {status?.connected ? <>
+        <p className="status good">Connected · @{status.username}</p>
+        <dl>{capability('Publishing', status.publishing_enabled)}{capability('Comments', status.comments_enabled)}{capability('Messages', status.messages_enabled)}</dl>
+        <h3>Automatic replies</h3>
+        {status.last_event_received_at ? <p>Last incoming activity: {new Date(status.last_event_received_at).toLocaleString()}. <Link to="/automations">View reply activity →</Link></p>
+          : <p className="notice">Waiting for the first incoming message or comment. Send a new DM from another account. If it does not appear in Automations, contact support to check your connection.</p>}
+        {status.token_expires_at && <p>Connection renewal due: {new Date(status.token_expires_at).toLocaleDateString()}</p>}
+        {status.webhook_error && <p className="notice">Automatic replies need attention. Reconnect permissions or contact support.</p>}
+        <div className="actions"><button className="button primary" disabled={busy} onClick={connect}>Reconnect permissions</button>{!status.webhook_subscribed && <button className="button secondary" disabled={busy || !status.messages_enabled} onClick={subscribe}>Connect automatic replies</button>}<button className="button danger" disabled={busy} onClick={disconnect}>Disconnect</button></div>
+      </> : <><p>Create a workspace first, then connect a Business or Creator account.</p><button className="button primary" disabled={busy} onClick={connect}>{busy ? 'Opening Instagram…' : 'Connect Instagram'}</button></>}
+    </div></article>
+  </Shell>
 }
 
 function Composer() {

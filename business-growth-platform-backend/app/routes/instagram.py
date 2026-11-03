@@ -66,11 +66,22 @@ def connection_status(user: CurrentUser = Depends(current_user)) -> dict:
         or {}
     )
     scopes = connection.get("granted_scopes") or []
+    latest_event = one(
+        db()
+        .table("automation_events")
+        .select("received_at")
+        .eq("workspace_id", workspace_id)
+        .eq("connection_id", connection["id"])
+        .order("received_at", desc=True)
+        .limit(1)
+        .execute()
+    )
     return {
         "connected": True,
         **account,
         "token_expires_at": connection.get("token_expires_at"),
         "webhook_subscribed": connection.get("webhook_subscribed", False),
+        "last_event_received_at": latest_event.get("received_at") if latest_event else None,
         "webhook_error": connection.get("webhook_error"),
         "granted_permissions": scopes,
         "publishing_enabled": "instagram_business_content_publish" in scopes,
