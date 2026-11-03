@@ -51,7 +51,7 @@ export const api = {
   automationActivity: () => request<AutomationActivity>('/api/automations/activity'),
   previewAutomation: (text: string, keywords: string[]) => request<{matched: boolean}>('/api/automations/preview', {method: 'POST', body: JSON.stringify({text,keywords})}),
   uploadMedia: (file: File) => { const body = new FormData(); body.append('file', file); return request<{ id: string, width: number, height: number }>('/api/media', { method: 'POST', body }) },
-  createPost: (payload: { caption: string, media_asset_id: string, scheduled_for?: string, timezone: string, approved: boolean, publish_now: boolean }) => request<{ job: CalendarItem }>('/api/content/posts', { method: 'POST', body: JSON.stringify(payload) }),
+  createPost: (payload: { caption: string, media_asset_id?: string, media_asset_ids?: string[], request_id?: string, enqueue_only?: boolean, scheduled_for?: string, timezone: string, approved: boolean, publish_now: boolean }) => request<{ job: CalendarItem }>('/api/content/posts', { method: 'POST', body: JSON.stringify(payload) }),
   calendar: () => request<{ items: CalendarItem[] }>('/api/content/calendar'),
   publishJob: (id: string) => request<CalendarItem>(`/api/publishing/jobs/${id}/publish`, { method: 'POST' }),
   updateCalendarItem: (id: string, payload: {caption?:string, scheduled_for?:string}) => request<CalendarItem>(`/api/content/calendar/${id}`, {method:'PATCH', body:JSON.stringify(payload)}),

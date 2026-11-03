@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile, status
 from PIL import Image, UnidentifiedImageError
-from pydantic import AwareDatetime, BaseModel, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, Field, field_validator, model_validator
 
 from app.config import Settings, get_settings
 from app.database import db, one
@@ -74,11 +74,27 @@ async def upload_media(
 
 class DraftCreate(BaseModel):
     caption: str = Field(max_length=2200)
-    media_asset_id: str
+    media_asset_id: str | None = None
+    media_asset_ids: list[str] = Field(default_factory=list, max_length=10)
+    request_id: uuid.UUID | None = None
+    enqueue_only: bool = False
     scheduled_for: AwareDatetime | None = None
     timezone: str = "UTC"
     approved: bool = False
     publish_now: bool = False
+
+    @model_validator(mode="after")
+    def valid_media(self):
+        if self.media_asset_id and self.media_asset_ids:
+            raise ValueError("Choose either one image or an image list")
+        ids = self.asset_ids
+        if not ids or len(ids) != len(set(ids)):
+            raise ValueError("Choose between one and ten different images")
+        return self
+
+    @property
+    def asset_ids(self) -> list[str]:
+        return [self.media_asset_id] if self.media_asset_id else self.media_asset_ids
 
     @field_validator("timezone")
     @classmethod
@@ -111,6 +127,48 @@ async def create_post(
     workspace_id = user_workspace(user.id)
     if not payload.approved:
         raise HTTPException(422, "Approve the image and caption before publishing or scheduling")
+    asset_ids = payload.asset_ids
+    post_type = "carousel" if len(asset_ids) > 1 else "photo"
+    request_id = str(payload.request_id or uuid.uuid4())
+    draft_id = str(uuid.uuid5(uuid.NAMESPACE_URL, workspace_id + request_id + ":draft"))
+    target_id = str(uuid.uuid5(uuid.NAMESPACE_URL, workspace_id + request_id + ":target"))
+    job_id = str(uuid.uuid5(uuid.NAMESPACE_URL, workspace_id + request_id + ":job"))
+    existing_draft = one(
+        db()
+        .table("content_drafts")
+        .select("*")
+        .eq("id", draft_id)
+        .eq("workspace_id", workspace_id)
+        .execute()
+    )
+    if existing_draft:
+        links = (
+            db()
+            .table("content_draft_media")
+            .select("media_asset_id")
+            .eq("draft_id", draft_id)
+            .order("position")
+            .execute()
+            .data
+        )
+        if (
+            existing_draft["caption"] != payload.caption
+            or existing_draft["post_type"] != post_type
+            or (links and [item["media_asset_id"] for item in links] != asset_ids)
+        ):
+            raise HTTPException(
+                409, "This request already belongs to a different post. Start a new post."
+            )
+        existing_job = one(
+            db()
+            .table("publishing_jobs")
+            .select("*")
+            .eq("id", job_id)
+            .eq("workspace_id", workspace_id)
+            .execute()
+        )
+        if existing_job:
+            return {"draft": existing_draft, "job": existing_job}
     if not payload.publish_now and (
         payload.scheduled_for is None or payload.scheduled_for <= datetime.now(UTC)
     ):
@@ -125,17 +183,27 @@ async def create_post(
     )
     if not connection or "instagram_business_content_publish" not in connection["granted_scopes"]:
         raise HTTPException(409, "Connect Instagram and grant publishing permission first")
-    asset = one(
+    assets = (
         db()
         .table("media_assets")
-        .select("id")
-        .eq("id", payload.media_asset_id)
+        .select("id,width,height,media_type")
+        .in_("id", asset_ids)
         .eq("workspace_id", workspace_id)
         .eq("validation_status", "valid")
         .execute()
+        .data
     )
-    if not asset:
-        raise HTTPException(422, "Select a valid uploaded image")
+    if {asset["id"] for asset in assets} != set(asset_ids) or any(
+        asset["media_type"] != "image" for asset in assets
+    ):
+        raise HTTPException(422, "Choose valid uploaded images from this workspace")
+    if post_type == "carousel":
+        ratios = [asset["width"] / asset["height"] for asset in assets]
+        if max(ratios) - min(ratios) > 0.01:
+            raise HTTPException(
+                422,
+                "Use the same image proportions for every carousel slide. Separate posts can use different proportions.",
+            )
     account = one(
         db()
         .table("social_accounts")
@@ -148,64 +216,81 @@ async def create_post(
     )
     if not account:
         raise HTTPException(409, "Connect Instagram before creating a post")
-    draft_status = "approved" if payload.approved else "draft"
-    draft = one(
-        db()
-        .table("content_drafts")
-        .insert(
+    db().table("content_drafts").upsert(
+        {
+            "id": draft_id,
+            "workspace_id": workspace_id,
+            "created_by": user.id,
+            "post_type": post_type,
+            "caption": payload.caption,
+            "status": "approved",
+            "approved_by": user.id,
+            "approved_at": datetime.now(UTC).isoformat(),
+        },
+        on_conflict="id",
+        ignore_duplicates=True,
+    ).execute()
+    db().table("content_draft_media").upsert(
+        [
             {
                 "workspace_id": workspace_id,
-                "created_by": user.id,
-                "post_type": "photo",
-                "caption": payload.caption,
-                "status": draft_status,
-                "approved_by": user.id if payload.approved else None,
-                "approved_at": datetime.now(UTC).isoformat() if payload.approved else None,
+                "draft_id": draft_id,
+                "media_asset_id": asset_id,
+                "position": position,
             }
-        )
-        .execute()
-    )
-    db().table("content_draft_media").insert(
-        {
-            "workspace_id": workspace_id,
-            "draft_id": draft["id"],
-            "media_asset_id": payload.media_asset_id,
-            "position": 0,
-        }
+            for position, asset_id in enumerate(asset_ids)
+        ],
+        on_conflict="draft_id,position",
+        ignore_duplicates=True,
     ).execute()
     scheduled_for = datetime.now(UTC) if payload.publish_now else payload.scheduled_for
-    target = one(
-        db()
-        .table("content_targets")
-        .insert(
-            {
-                "workspace_id": workspace_id,
-                "draft_id": draft["id"],
-                "social_account_id": account["id"],
-                "scheduled_for": scheduled_for.isoformat(),
-                "timezone": payload.timezone,
-            }
-        )
-        .execute()
-    )
+    db().table("content_targets").upsert(
+        {
+            "id": target_id,
+            "workspace_id": workspace_id,
+            "draft_id": draft_id,
+            "social_account_id": account["id"],
+            "scheduled_for": scheduled_for.isoformat(),
+            "timezone": payload.timezone,
+        },
+        on_conflict="id",
+        ignore_duplicates=True,
+    ).execute()
+    db().table("publishing_jobs").upsert(
+        {
+            "id": job_id,
+            "idempotency_key": request_id,
+            "workspace_id": workspace_id,
+            "content_target_id": target_id,
+            "status": "scheduled",
+            "scheduled_for": scheduled_for.isoformat(),
+        },
+        on_conflict="id",
+        ignore_duplicates=True,
+    ).execute()
     job = one(
         db()
         .table("publishing_jobs")
-        .insert(
-            {
-                "workspace_id": workspace_id,
-                "content_target_id": target["id"],
-                "status": "scheduled",
-                "scheduled_for": scheduled_for.isoformat(),
-            }
-        )
+        .select("*")
+        .eq("id", job_id)
+        .eq("workspace_id", workspace_id)
         .execute()
     )
-    if payload.publish_now:
+    draft = one(
+        db()
+        .table("content_drafts")
+        .select("*")
+        .eq("id", draft_id)
+        .eq("workspace_id", workspace_id)
+        .execute()
+    )
+    if payload.publish_now and not payload.enqueue_only and job["status"] == "scheduled":
         try:
             job = await publish_job(job["id"], workspace_id, settings)
-        except Exception as exc:
-            raise HTTPException(502, str(exc)) from exc
+        except Exception:
+            raise HTTPException(
+                502, "Publishing needs attention. Check this post in Calendar before retrying."
+            ) from None
     return {"draft": draft, "job": job}
 
 

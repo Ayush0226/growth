@@ -6,7 +6,7 @@ import httpx
 
 from app.config import Settings
 from app.database import db, one
-from app.meta import MetaAPIError
+from app.meta import InstagramClient, MetaAPIError
 from app.security import TokenCipher
 
 logger = logging.getLogger(__name__)
@@ -47,6 +47,7 @@ async def publish_job(job_id: str, workspace_id: str, settings: Settings) -> dic
     if not claimed.data:
         raise ValueError("Publishing job could not be claimed")
 
+    token = ""
     publication_started = False
     published = False
     try:
@@ -60,7 +61,7 @@ async def publish_job(job_id: str, workspace_id: str, settings: Settings) -> dic
         draft = one(
             db()
             .table("content_drafts")
-            .select("caption,status")
+            .select("caption,status,post_type")
             .eq("id", target["draft_id"])
             .execute()
         )
@@ -89,27 +90,40 @@ async def publish_job(job_id: str, workspace_id: str, settings: Settings) -> dic
             raise ValueError("This post belongs to a previously connected Instagram account")
         if "instagram_business_content_publish" not in connection["granted_scopes"]:
             raise ValueError("Publishing permission missing")
-        link = one(
+        links = (
             db()
             .table("content_draft_media")
-            .select("media_asset_id")
+            .select("media_asset_id,position")
             .eq("draft_id", target["draft_id"])
             .order("position")
-            .limit(1)
+            .limit(10)
             .execute()
+            .data
         )
-        asset = one(
-            db()
-            .table("media_assets")
-            .select("prepared_storage_path,original_storage_path,validation_status")
-            .eq("id", link["media_asset_id"])
-            .execute()
-        )
-        if asset["validation_status"] != "valid":
-            raise ValueError("Media format unsupported")
-        path = asset["prepared_storage_path"] or asset["original_storage_path"]
-        signed = db().storage.from_("instagram-media").create_signed_url(path, 3600)
-        image_url = signed.get("signedURL") or signed.get("signed_url")
+        carousel = draft.get("post_type") == "carousel"
+        if (
+            not links
+            or (carousel and not 2 <= len(links) <= 10)
+            or (not carousel and len(links) != 1)
+        ):
+            raise ValueError("The post has an invalid number of images")
+        image_urls = []
+        for link in links:
+            asset = one(
+                db()
+                .table("media_assets")
+                .select("prepared_storage_path,original_storage_path,validation_status")
+                .eq("id", link["media_asset_id"])
+                .execute()
+            )
+            if not asset or asset["validation_status"] != "valid":
+                raise ValueError("Media format unsupported")
+            path = asset["prepared_storage_path"] or asset["original_storage_path"]
+            signed = db().storage.from_("instagram-media").create_signed_url(path, 3600)
+            image_url = signed.get("signedURL") or signed.get("signed_url")
+            if not image_url:
+                raise ValueError("An image could not be prepared for Instagram")
+            image_urls.append(image_url)
         token = TokenCipher(settings.token_encryption_key).decrypt(
             connection["access_token_encrypted"]
         )
@@ -117,19 +131,50 @@ async def publish_job(job_id: str, workspace_id: str, settings: Settings) -> dic
         async with httpx.AsyncClient(timeout=30) as client:
             container_id = job.get("provider_container_id")
             if not container_id:
-                response = await client.post(
-                    f"{base}/{account['provider_account_id']}/media",
-                    data={
-                        "image_url": image_url,
+                if carousel:
+                    children = []
+                    for image_url in image_urls:
+                        child_response = await client.post(
+                            f"{base}/{account['provider_account_id']}/media",
+                            data={
+                                "image_url": image_url,
+                                "is_carousel_item": "true",
+                                "access_token": token,
+                            },
+                        )
+                        child = InstagramClient._json(child_response)
+                        for _ in range(10):
+                            child_status = InstagramClient._json(
+                                await client.get(
+                                    f"{base}/{child['id']}",
+                                    params={"fields": "status_code", "access_token": token},
+                                )
+                            )
+                            if child_status.get("status_code") == "FINISHED":
+                                break
+                            if child_status.get("status_code") in {"ERROR", "EXPIRED", "PUBLISHED"}:
+                                raise MetaAPIError("Instagram could not prepare a carousel slide")
+                            await asyncio.sleep(2)
+                        else:
+                            raise MetaAPIError("A carousel slide took too long to prepare")
+                        children.append(child["id"])
+                    container_data = {
+                        "media_type": "CAROUSEL",
+                        "children": ",".join(children),
                         "caption": draft["caption"],
                         "access_token": token,
-                    },
+                    }
+                else:
+                    container_data = {
+                        "image_url": image_urls[0],
+                        "caption": draft["caption"],
+                        "access_token": token,
+                    }
+                response = await client.post(
+                    f"{base}/{account['provider_account_id']}/media",
+                    data=container_data,
                 )
-                data = response.json()
-                if response.status_code >= 400 or "error" in data:
-                    raise MetaAPIError(
-                        data.get("error", {}).get("message", "Instagram container creation failed")
-                    )
+                data = InstagramClient._json(response)
                 container_id = data["id"]
                 db().table("publishing_jobs").update({"provider_container_id": container_id}).eq(
                     "id", job_id
@@ -139,7 +184,7 @@ async def publish_job(job_id: str, workspace_id: str, settings: Settings) -> dic
                     f"{base}/{container_id}",
                     params={"fields": "status_code,status", "access_token": token},
                 )
-                status_data = status_response.json()
+                status_data = InstagramClient._json(status_response)
                 if status_data.get("status_code") == "PUBLISHED":
                     publication_started = True
                     raise MetaAPIError(
@@ -220,7 +265,7 @@ async def publish_job(job_id: str, workspace_id: str, settings: Settings) -> dic
                 else ("temporary_meta_error" if retryable else "validation_error"),
                 "failure_message": "Check Instagram before retrying; publication could not be confirmed."
                 if publication_started
-                else str(exc)[:500],
+                else (str(exc).replace(token, "[redacted]") if token else str(exc))[:500],
                 "retryable": retryable and not publication_started,
                 "locked_at": None,
                 "locked_by": None,

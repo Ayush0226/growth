@@ -6,7 +6,8 @@ React/TypeScript frontend, FastAPI backend, and Supabase database for one profes
 
 - Supabase email sign-in, persistent sessions and workspace onboarding.
 - Instagram Login with publishing, comments and messaging permissions; insights are optional.
-- Explicitly approved single-JPEG publishing and scheduling, with calendar editing, cancellation and retry.
+- Explicitly approved single-JPEG and 2–10-image carousel publishing and scheduling, with slide ordering, calendar editing, cancellation and retry.
+- Batch preparation of up to 10 separate photo posts, with individual captions and optional schedule spacing. Stable request IDs make unchanged save retries return the original jobs.
 - Manual comment management and an inbox that resolves the connected account dynamically.
 - Opt-in welcome-after-first-DM, DM keyword, and selected-post comment-to-private-DM rules.
 - Signed webhook validation, durable event deduplication, per-rule daily limits and recipient cooldowns.
@@ -32,7 +33,7 @@ For the existing project, run `APPLY_MVP_UPGRADE.sql` in the Supabase SQL Editor
 
 Migration 003 adds automation storage and a service-role-only worker lease. Migration 004 installs `pg_cron`/`pg_net`, generates a scheduler credential privately in the database, and registers `growthboard-mvp-worker` every minute. No credential is embedded in the SQL file. Confirm the correct API URL in migration 004 if deploying elsewhere.
 
-The backend also processes due work every 30 seconds while running. The hosted trigger wakes an idle Render service. Both paths use the same database lease. Cold starts, outages, quotas and provider limits can delay delivery; scheduled content more than 24 hours overdue is flagged for manual review rather than posted unexpectedly. Inspect the readiness endpoint for the latest worker completion. Supabase Cron's HTTP request result and the application completion heartbeat are distinct signals.
+The backend also processes due work every 30 seconds while running. Worker leases expire within two minutes and renew every 20 seconds while active; database requests have bounded timeouts. The hosted trigger wakes an idle Render service. Both paths use the same database lease. Cold starts, outages, quotas and provider limits can delay delivery; scheduled content more than 24 hours overdue is flagged for manual review rather than posted unexpectedly. Inspect the readiness endpoint for the latest worker completion. Supabase Cron's HTTP request result and the application completion heartbeat are distinct signals.
 
 ## Meta setup
 
@@ -42,7 +43,7 @@ The backend also processes due work every 30 seconds while running. The hosted t
    `https://business-growth-platform-api.onrender.com/api/instagram/webhook`
 3. Use `INSTAGRAM_WEBHOOK_VERIFY_TOKEN` from the backend environment for GET verification. Event signatures are checked with `META_WEBHOOK_APP_SECRET` when configured, otherwise `META_APP_SECRET`. Use the Meta application secret for webhook signatures; a separately issued Instagram Login secret may differ.
 4. Subscribe the Meta app to `messages` and `comments`. In development mode, use an approved Instagram tester and a professional account.
-5. Reconnect in Growthboard and grant comments/messaging. Then click **Enable event delivery** in Connections to subscribe that Instagram account to the app.
+5. Reconnect in Growthboard and grant comments/messaging. Then click **Connect automatic replies** in Connections if shown to subscribe that Instagram account to the app.
 6. Create a paused rule, review its exact text and target posts, and enable it when ready.
 
 Requested scopes are not assumed granted. The token response's grants are stored; when Meta does not report them, the UI can show limited access rather than claiming all permissions. Production use by unrelated businesses depends on the appropriate Meta access/review status.
@@ -64,9 +65,17 @@ Unit tests use isolated fake storage and HTTP transports; they do not publish to
 - Enable a selected-post comment rule and test a keyword comment on that selected post. Other posts must not trigger it.
 - Pause a rule or disconnect; verify subsequent events do not trigger new replies.
 
+## Publishing formats
+
+In **Create**, choose one photo, one carousel, or several separate posts. Carousels support 2–10 JPEG images with matching proportions, one caption and ordered slides. Batch mode creates up to 10 independent photo posts, each with its own caption. Scheduling can use the same time or a chosen number of minutes between posts. Each result appears separately in Calendar.
+
+The composer uploads all selected images before creating jobs and requires approval of the displayed images, order and captions. **Publish now** queues approved jobs for the hosted worker. Independent posts are not an atomic Instagram transaction: partial success remains visible in Calendar. An unchanged retry uses stable request IDs, so it continues or returns an existing job instead of creating another post. Review uncertain results in Calendar before starting new posts. JPEGs are limited to 8 MB each; no video upload or direct PDF message attachment is included.
+
+No schema upgrade is required for this change: the original content tables already support ordered carousel images. Live carousel acceptance still requires an explicitly approved post on the connected Instagram account.
+
 ## Boundaries
 
-WhatsApp, branching chatbot flows, AI media generation, Reels/carousel publishing, billing and multi-account agency workflows are outside this MVP. Insights require their own optional permission. This is a private pilot until Meta configuration, legal/contact details and real-account acceptance checks are complete.
+WhatsApp, branching chatbot flows, AI media generation, Reels/Stories/video-carousel publishing, billing and multi-account agency workflows are outside this MVP. Insights require their own optional permission. This is a private pilot until Meta configuration, legal/contact details and real-account acceptance checks are complete.
 
 References: [Meta's official Instagram collection](https://www.postman.com/meta/instagram/folder/1z5vxzu/instagram-api-with-instagram-login) and [Supabase scheduled HTTP calls](https://supabase.com/docs/guides/database/extensions/pg_net).
 
