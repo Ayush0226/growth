@@ -32,7 +32,7 @@ async def lifespan(_: FastAPI):
                 await task
 
 
-app = FastAPI(title="Growthboard API", version="0.2.3", lifespan=lifespan)
+app = FastAPI(title="Growthboard API", version="0.2.4", lifespan=lifespan)
 settings = get_settings()
 app.add_middleware(
     CORSMiddleware,

@@ -13,6 +13,31 @@ from app.publishing import publish_job
 logger = logging.getLogger(__name__)
 
 
+def acquire_lease(holder: str) -> bool:
+    now = datetime.now(UTC)
+    values = {"holder": holder, "expires_at": (now + timedelta(minutes=2)).isoformat()}
+    # Both writes are atomic. A lost response can leave only a two-minute lease.
+    # The previous RPC installed a twenty-minute lease before its response arrived.
+    replaced = (
+        db()
+        .table("scheduler_leases")
+        .update(values)
+        .eq("name", "mvp")
+        .lt("expires_at", now.isoformat())
+        .execute()
+        .data
+    )
+    if replaced:
+        return True
+    return bool(
+        db()
+        .table("scheduler_leases")
+        .upsert({"name": "mvp", **values}, on_conflict="name", ignore_duplicates=True)
+        .execute()
+        .data
+    )
+
+
 def renew_lease(holder: str) -> bool:
     return bool(
         db()
@@ -76,15 +101,12 @@ def finish_interrupted(event: dict, exc: Exception):
 
 async def run_pending(settings: Settings) -> dict:
     holder = str(uuid.uuid4())
-    acquired = await asyncio.to_thread(
-        lambda: db().rpc("acquire_growthboard_lease", {"lease_holder": holder}).execute().data
-    )
-    if acquired is not True:
-        return {"status": "busy", "published": 0, "events": 0}
     result = {"status": "completed", "published": 0, "events": 0, "failures": 0}
     lost = asyncio.Event()
     heartbeat = None
     try:
+        if not await asyncio.to_thread(acquire_lease, holder):
+            return {"status": "busy", "published": 0, "events": 0}
         if not await asyncio.to_thread(renew_lease, holder):
             return {"status": "busy", "published": 0, "events": 0}
         heartbeat = asyncio.create_task(keep_lease(holder, lost))
