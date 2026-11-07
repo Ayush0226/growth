@@ -1,7 +1,9 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, createContext, useContext, useEffect, useState } from 'react'
 import { Link, NavLink, Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
-import { supabase } from './lib/supabase'
+import { supabase, googleSignInEnabled } from './lib/supabase'
+import AccessPage from './AccessPage'
+import type { AccessState } from './AccessPage'
 import BusinessChatbot from './BusinessChatbot'
 import Automations from './Automations'
 import InboxPage from './Inbox'
@@ -17,13 +19,21 @@ function Home() {
   return <Shell><section className="hero"><span className="eyebrow">Instagram publishing, kept simple</span><h1>Plan with confidence.<br/>Publish with approval.</h1><p>One calm workspace for creating, scheduling, and safely publishing content to your professional Instagram account.</p><div className="actions"><Link className="button primary" to="/login">Start private access</Link><Link className="button secondary" to="/privacy">How we handle data</Link></div><div className="proof"><span>One workspace</span><span>Approval required</span><span>Disconnect anytime</span></div></section></Shell>
 }
 
+const AppAccess = createContext<{state?:AccessState;error:string;refresh:()=>Promise<void>}>({error:'',refresh:async()=>{}})
 function Login() {
-  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [signup, setSignup] = useState(false); const [message, setMessage] = useState(''); const navigate = useNavigate()
-  async function submit(e: FormEvent) { e.preventDefault(); setMessage(''); const result = signup ? await supabase.auth.signUp({ email, password }) : await supabase.auth.signInWithPassword({ email, password }); if (result.error) setMessage(result.error.message); else if (signup && !result.data.session) setMessage('Check your email to confirm your account.'); else navigate('/dashboard') }
-  return <Shell><section className="auth-card"><p className="eyebrow">{signup ? 'Create your workspace' : 'Welcome back'}</p><h1>{signup ? 'Start publishing thoughtfully.' : 'Sign in to Growthboard.'}</h1><form onSubmit={submit}><label>Email<input type="email" value={email} onChange={e=>setEmail(e.target.value)} required /></label><label>Password<input type="password" minLength={8} value={password} onChange={e=>setPassword(e.target.value)} required /></label><button className="button primary" type="submit">{signup ? 'Create account' : 'Sign in'}</button></form>{message && <p className="notice">{message}</p>}<button className="text-button" onClick={()=>setSignup(!signup)}>{signup ? 'Already have an account? Sign in' : 'New here? Create an account'}</button></section></Shell>
+  const [email,setEmail]=useState('');const [password,setPassword]=useState('');const [signup,setSignup]=useState(false);const [message,setMessage]=useState('');const [busy,setBusy]=useState(false);const [google,setGoogle]=useState<boolean>();const navigate=useNavigate()
+  useEffect(()=>{let active=true;googleSignInEnabled().then(value=>{if(active)setGoogle(value)}).catch(()=>{if(active)setGoogle(false)});return()=>{active=false}},[])
+  async function submit(event:FormEvent){event.preventDefault();setBusy(true);setMessage('');try{const result=signup?await supabase.auth.signUp({email,password}):await supabase.auth.signInWithPassword({email,password});if(result.error)setMessage(result.error.message);else if(signup&&!result.data.session)setMessage('Check your email to confirm your account, then sign in.');else navigate('/access')}catch{setMessage('Could not sign in. Please try again.')}finally{setBusy(false)}}
+  async function signInGoogle(){setBusy(true);setMessage('');try{const result=await supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo:`${window.location.origin}/access`}});if(result.error){setMessage(result.error.message);setBusy(false)}}catch{setMessage('Google sign-in could not start. Please try again.');setBusy(false)}}
+  return <Shell><section className="auth-card"><p className="eyebrow">{signup?'Create your account':'Welcome back'}</p><h1>{signup?'Join Growthboard.':'Sign in to Growthboard.'}</h1><button className="button google-signin" disabled={busy||!google} onClick={()=>void signInGoogle()}><span aria-hidden="true">G</span>Continue with Google</button>{google===false&&<small className="muted-text">Google sign-in is being configured. Email sign-in is available below.</small>}<div className="auth-divider"><span>or use email</span></div><form onSubmit={submit}><label>Email<input type="email" autoComplete="email" value={email} disabled={busy} onChange={event=>setEmail(event.target.value)} required/></label><label>Password<input type="password" autoComplete={signup?'new-password':'current-password'} minLength={8} value={password} disabled={busy} onChange={event=>setPassword(event.target.value)} required/></label><button className="button primary" disabled={busy}>{busy?'Please wait…':signup?'Create account':'Sign in'}</button></form>{message&&<p className="notice" role="status">{message}</p>}<button className="text-button" disabled={busy} onClick={()=>{setSignup(!signup);setMessage('')}}>{signup?'Already have an account? Sign in':'New here? Create an account'}</button><p className="muted-text">New accounts need your administrator’s access code after signing in.</p></section></Shell>
 }
-
-function Protected({ session, children }: { session: Session | null, children: React.ReactNode }) { return session ? <>{children}</> : <Navigate to="/login" replace /> }
+function Protected({session,children}:{session:Session|null;children:React.ReactNode}){
+  const access=useContext(AppAccess)
+  if(!session)return <Navigate to="/login" replace/>
+  if(!access.state||!access.state.approved)return <Navigate to="/access" replace/>
+  return <>{children}</>
+}
+function Access({session}:{session:Session|null}){const access=useContext(AppAccess);return <Shell><AccessPage session={session} state={access.state} error={access.error} onRefresh={access.refresh}/></Shell>}
 
 function Dashboard() {
   const [name, setName] = useState(''); const [message, setMessage] = useState(''); const [workspaceReady,setWorkspaceReady]=useState(false); useEffect(()=>{api.workspace().then(r=>setWorkspaceReady(Boolean(r.workspace))).catch(e=>setMessage(e.message))},[])
@@ -129,7 +139,11 @@ function Legal({ kind }: {kind:string}) { const page=legal[kind]; return <Shell>
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null); const [ready, setReady] = useState(false)
+  const [access,setAccess]=useState<{user:string;state?:AccessState;error:string}>({user:'',error:''})
+  const userId=session?.user.id
+  async function refreshAccess(){if(!userId)return;try{const state=await api.accessStatus();setAccess({user:userId,state,error:''})}catch(error){setAccess({user:userId,error:error instanceof Error?error.message:'Could not check access.'})}}
+  useEffect(()=>{let active=true;if(userId){api.accessStatus().then(state=>{if(active)setAccess({user:userId,state,error:''})}).catch(error=>{if(active)setAccess({user:userId,error:error.message})})}return()=>{active=false}},[userId])
   useEffect(()=>{ supabase.auth.getSession().then(({data})=>{setApiUser(data.session?.user.id || '');setSession(data.session);setReady(true)}); const {data}=supabase.auth.onAuthStateChange((_e,s)=>{setApiUser(s?.user.id || '');setSession(s)}); return()=>data.subscription.unsubscribe() },[])
   if(!ready) return <div className="loading">Growthboard</div>
-  return <Routes key={session?.user.id||'public'}><Route path="/" element={<Home/>}/><Route path="/login" element={<Login/>}/><Route path="/dashboard" element={<Protected session={session}><Dashboard/></Protected>}/><Route path="/composer" element={<Protected session={session}><Composer/></Protected>}/><Route path="/calendar" element={<Protected session={session}><Calendar/></Protected>}/><Route path="/engagement" element={<Protected session={session}><Engagement/></Protected>}/><Route path="/inbox" element={<Protected session={session}><Inbox/></Protected>}/><Route path="/automations" element={<Protected session={session}><Shell><Automations/></Shell></Protected>}/><Route path="/assistant" element={<Protected session={session}><Shell><BusinessChatbot/></Shell></Protected>}/><Route path="/insights" element={<Protected session={session}><InsightsPage/></Protected>}/><Route path="/settings/connections" element={<Protected session={session}><Connections/></Protected>}/>{Object.keys(legal).map(k=><Route key={k} path={`/${k}`} element={<Legal kind={k}/>}/>)}<Route path="*" element={<Navigate to="/"/>}/></Routes>
+  return <AppAccess.Provider value={{state:access.user===userId?access.state:undefined,error:access.user===userId?access.error:'',refresh:refreshAccess}}><Routes key={session?.user.id||'public'}><Route path="/" element={<Home/>}/><Route path="/login" element={<Login/>}/><Route path="/access" element={<Access session={session}/>}/><Route path="/dashboard" element={<Protected session={session}><Dashboard/></Protected>}/><Route path="/composer" element={<Protected session={session}><Composer/></Protected>}/><Route path="/calendar" element={<Protected session={session}><Calendar/></Protected>}/><Route path="/engagement" element={<Protected session={session}><Engagement/></Protected>}/><Route path="/inbox" element={<Protected session={session}><Inbox/></Protected>}/><Route path="/automations" element={<Protected session={session}><Shell><Automations/></Shell></Protected>}/><Route path="/assistant" element={<Protected session={session}><Shell><BusinessChatbot/></Shell></Protected>}/><Route path="/insights" element={<Protected session={session}><InsightsPage/></Protected>}/><Route path="/settings/connections" element={<Protected session={session}><Connections/></Protected>}/>{Object.keys(legal).map(k=><Route key={k} path={`/${k}`} element={<Legal kind={k}/>}/>)}<Route path="*" element={<Navigate to="/"/>}/></Routes></AppAccess.Provider>
 }

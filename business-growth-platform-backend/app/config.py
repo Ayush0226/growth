@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field, HttpUrl
+from pydantic import Field, HttpUrl, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     ai_provider_api_key: str | None = None
     groq_api_key: str | None = None
     groq_model: str = "openai/gpt-oss-20b"
+    pilot_access_code: SecretStr | None = None
     scheduler_enabled: bool = True
     scheduler_interval_seconds: int = Field(default=30, ge=10, le=300)
 

@@ -76,6 +76,8 @@ async function request<T>(path: string, init?: RequestInit, expectedUser?: strin
 }
 
 export const api = {
+  accessStatus: () => request<{approved:boolean;setup_ready:boolean;revoked:boolean}>('/api/access'),
+  redeemAccess: (code:string) => request<{approved:boolean}>('/api/access/redeem',{method:'POST',body:JSON.stringify({code})}),
   chatbot: () => request<ChatbotStatus>('/api/chatbot'),
   saveChatbot: (config: BotInput) => request<BusinessBot>('/api/chatbot', {method:'PUT',body:JSON.stringify(config)}),
   enableChatbot: (enabled:boolean,updated_at:string) => request<BusinessBot>('/api/chatbot/enabled',{method:'POST',body:JSON.stringify({enabled,updated_at})}),

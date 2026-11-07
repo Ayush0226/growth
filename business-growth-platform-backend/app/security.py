@@ -3,8 +3,9 @@ import secrets
 from base64 import urlsafe_b64encode
 
 from cryptography.fernet import Fernet, InvalidToken
-from fastapi import HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, status
 
+from app.access import access_state
 from app.database import db
 
 
@@ -38,7 +39,7 @@ class CurrentUser:
         self.email = email
 
 
-def current_user(request: Request) -> CurrentUser:
+def authenticated_user(request: Request) -> CurrentUser:
     header = request.headers.get("authorization", "")
     if not header.startswith("Bearer "):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing bearer token")
@@ -51,3 +52,10 @@ def current_user(request: Request) -> CurrentUser:
     except Exception as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired session") from exc
     return CurrentUser(str(user.id), user.email)
+
+
+def current_user(user: CurrentUser = Depends(authenticated_user)) -> CurrentUser:
+    allowed, _, _ = access_state(user.id)
+    if not allowed:
+        raise HTTPException(403, "An access code is required before using Growthboard.")
+    return user
