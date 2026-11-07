@@ -106,6 +106,8 @@ def readiness():
             "version": app.version,
             "scheduler": scheduler or {},
             "background_worker_enabled": settings.scheduler_enabled,
+            "ai_provider_configured": bool(settings.groq_api_key),
+            "pilot_access_configured": bool(settings.pilot_access_code and settings.pilot_access_code.get_secret_value()),
         }
     except Exception:  # noqa: BLE001 - readiness reports a redacted dependency status
         return JSONResponse(
