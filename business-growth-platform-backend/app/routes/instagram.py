@@ -5,6 +5,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
 
+from app.chatbot import configuration as chatbot_configuration
 from app.config import Settings, get_settings
 from app.database import db, one
 from app.meta import MVP_SCOPES, InstagramClient, MetaAPIError
@@ -339,6 +340,9 @@ async def disconnect(
     db().table("automation_rules").update({"enabled": False}).eq(
         "workspace_id", workspace_id
     ).execute()
+    bot, _ = chatbot_configuration(workspace_id)
+    if bot:
+        db().table("business_chatbots").update({"enabled": False, "updated_at": datetime.now(UTC).isoformat()}).eq("workspace_id", workspace_id).execute()
     db().table("automation_events").update(
         {"status": "ignored", "detail": "Instagram disconnected"}
     ).eq("workspace_id", workspace_id).eq("status", "pending").execute()

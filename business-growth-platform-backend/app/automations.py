@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 
+from app.chatbot import configuration, human_request, pause_contact, process_ai
 from app.config import Settings
 from app.database import db, one
 from app.meta import InstagramClient, MetaAPIError
@@ -221,6 +222,12 @@ async def process_event(event: dict, settings: Settings) -> None:
             db().table("automation_contacts").update({"last_inbound_at": event["occurred_at"]}).eq(
                 "connection_id", event["connection_id"]
             ).eq("sender_id", event["sender_id"]).execute()
+    if event["kind"] == "dm" and human_request(event["text"]):
+        bot, _ = configuration(event["workspace_id"])
+        if bot and bot["enabled"]:
+            pause_contact(event, "Customer requested a person or stopped AI replies")
+            finish("ignored", "AI paused for this customer; reply manually in Messages")
+            return
     rules = (
         db()
         .table("automation_rules")
@@ -233,7 +240,7 @@ async def process_event(event: dict, settings: Settings) -> None:
     )
     rule = select_rule(event, rules, first_inbound)
     if not rule:
-        finish("ignored", "No enabled rule matched")
+        await process_ai(event, connection, settings, finish)
         return
     daily = (
         db()

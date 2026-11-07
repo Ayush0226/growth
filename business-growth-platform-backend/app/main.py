@@ -11,7 +11,7 @@ from postgrest.exceptions import APIError
 from app.config import get_settings
 from app.database import db, one
 from app.meta import MetaAPIError
-from app.routes import automations, content, engagement, instagram, workspaces
+from app.routes import automations, chatbot, content, engagement, instagram, workspaces
 from app.worker import worker_loop
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -20,8 +20,12 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(application: FastAPI):
     config = get_settings()
+    instagram_http = httpx.AsyncClient(
+        timeout=25, limits=httpx.Limits(max_connections=20, max_keepalive_connections=10)
+    )
+    application.state.instagram_http = instagram_http
     task = asyncio.create_task(worker_loop(config)) if config.scheduler_enabled else None
     try:
         yield
@@ -30,9 +34,10 @@ async def lifespan(_: FastAPI):
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
+        await instagram_http.aclose()
 
 
-app = FastAPI(title="Growthboard API", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="Growthboard API", version="0.4.0", lifespan=lifespan)
 settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
@@ -46,6 +51,7 @@ app.include_router(instagram.router)
 app.include_router(content.router)
 app.include_router(engagement.router)
 app.include_router(automations.router)
+app.include_router(chatbot.router)
 
 
 @app.get("/health")

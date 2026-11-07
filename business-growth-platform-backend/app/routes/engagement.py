@@ -7,9 +7,11 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from app.automations import ingest, valid_signature
+from app.chatbot import configuration, pause_contact
 from app.config import Settings, get_settings
 from app.database import db, one
 from app.meta import InstagramClient, MetaAPIError
+from app.read_cache import cached, invalidate, page
 from app.routes.instagram import user_workspace
 from app.security import CurrentUser, TokenCipher, current_user
 
@@ -17,7 +19,9 @@ router = APIRouter(prefix="/api/instagram", tags=["engagement"])
 logger = logging.getLogger(__name__)
 
 
-def connected(workspace_id: str, settings: Settings) -> tuple[InstagramClient, str, dict]:
+def connected(
+    workspace_id: str, settings: Settings, scope: str | None = None
+) -> tuple[InstagramClient, str, dict]:
     connection = one(
         db()
         .table("social_connections")
@@ -28,6 +32,8 @@ def connected(workspace_id: str, settings: Settings) -> tuple[InstagramClient, s
         .limit(1)
         .execute()
     )
+    if scope and (not connection or scope not in (connection.get("granted_scopes") or [])):
+        raise HTTPException(403, "Reconnect Instagram and approve the required permission")
     account = (
         one(
             db()
@@ -66,34 +72,87 @@ class MessageBody(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
 
 
+async def read_connection(user, settings, request, scope=None):
+    workspace_id = await asyncio.to_thread(user_workspace, user.id)
+    client, token, account = await asyncio.to_thread(connected, workspace_id, settings, scope)
+    client.http_client = getattr(request.app.state, "instagram_http", None)
+    return workspace_id, client, token, account
+
+
 @router.get("/media")
 async def media(
-    user: CurrentUser = Depends(current_user), settings: Settings = Depends(get_settings)
+    request: Request,
+    user: CurrentUser = Depends(current_user),
+    settings: Settings = Depends(get_settings),
+    after: str | None = Query(default=None, max_length=4096),
+    refresh: bool = False,
 ) -> dict:
-    workspace_id = user_workspace(user.id)
-    client, token, _ = connected(workspace_id, settings)
-    return await client.get(
-        "me/media",
-        token,
-        fields="id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,comments_count,like_count",
-        limit=50,
+    workspace, client, token, account = await read_connection(user, settings, request)
+
+    async def load():
+        return page(
+            await client.get(
+                "me/media",
+                token,
+                fields="id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,comments_count,like_count",
+                limit=30,
+                **({"after": after} if after else {}),
+            )
+        )
+
+    return await cached(
+        (workspace, account["connection_id"], account["provider_account_id"], "media", after),
+        load,
+        30,
+        refresh,
     )
 
 
 @router.get("/media/{media_id}/comments")
 async def comments(
     media_id: str,
+    request: Request,
     user: CurrentUser = Depends(current_user),
     settings: Settings = Depends(get_settings),
+    after: str | None = Query(default=None, max_length=4096),
+    refresh: bool = False,
 ) -> dict:
-    workspace_id = user_workspace(user.id)
-    require("instagram_business_manage_comments", workspace_id)
-    client, token, _ = connected(workspace_id, settings)
-    return await client.get(
-        f"{media_id}/comments",
-        token,
-        fields="id,text,timestamp,username,like_count,hidden,replies{id,text,timestamp,username}",
-        limit=100,
+    workspace, client, token, account = await read_connection(
+        user, settings, request, "instagram_business_manage_comments"
+    )
+
+    async def load():
+        result = page(
+            await client.get(
+                f"{media_id}/comments",
+                token,
+                fields="id,text,timestamp,username,from,like_count,hidden,replies{id,text,timestamp,username,from}",
+                limit=30,
+                **({"after": after} if after else {}),
+            )
+        )
+        for comment in result.get("data", []):
+            comment["username"] = comment.get("username") or (comment.get("from") or {}).get(
+                "username"
+            )
+            for reply in (comment.get("replies") or {}).get("data", []):
+                reply["username"] = reply.get("username") or (reply.get("from") or {}).get(
+                    "username"
+                )
+        return result
+
+    return await cached(
+        (
+            workspace,
+            account["connection_id"],
+            account["provider_account_id"],
+            "comments",
+            media_id,
+            after,
+        ),
+        load,
+        10,
+        refresh,
     )
 
 
@@ -107,6 +166,7 @@ async def reply_comment(
     workspace_id = user_workspace(user.id)
     require("instagram_business_manage_comments", workspace_id)
     client, token, _ = connected(workspace_id, settings)
+    invalidate(workspace_id)
     return await client.post(f"{comment_id}/replies", token, message=payload.message)
 
 
@@ -120,6 +180,7 @@ async def hide_comment(
     workspace_id = user_workspace(user.id)
     require("instagram_business_manage_comments", workspace_id)
     client, token, _ = connected(workspace_id, settings)
+    invalidate(workspace_id)
     return await client.post(comment_id, token, hide=json.dumps(hidden))
 
 
@@ -132,36 +193,96 @@ async def delete_comment(
     workspace_id = user_workspace(user.id)
     require("instagram_business_manage_comments", workspace_id)
     client, token, _ = connected(workspace_id, settings)
+    invalidate(workspace_id)
     return await client.delete(comment_id, token)
 
 
 @router.get("/conversations")
 async def conversations(
-    user: CurrentUser = Depends(current_user), settings: Settings = Depends(get_settings)
+    request: Request,
+    user: CurrentUser = Depends(current_user),
+    settings: Settings = Depends(get_settings),
+    after: str | None = Query(default=None, max_length=4096),
+    refresh: bool = False,
 ) -> dict:
-    workspace_id = user_workspace(user.id)
-    require("instagram_business_manage_messages", workspace_id)
-    client, token, account = connected(workspace_id, settings)
-    return await client.get(
-        f"{account['provider_account_id']}/conversations",
-        token,
-        platform="instagram",
-        fields="id,updated_time,participants,messages.limit(1){id,created_time,from,to,message}",
-        limit=50,
+    workspace, client, token, account = await read_connection(
+        user, settings, request, "instagram_business_manage_messages"
+    )
+
+    async def load():
+        return page(
+            await client.get(
+                f"{account['provider_account_id']}/conversations",
+                token,
+                platform="instagram",
+                fields="id,updated_time,participants,messages.limit(1){id,created_time,from,to,message}",
+                limit=25,
+                **({"after": after} if after else {}),
+            )
+        )
+
+    return await cached(
+        (
+            workspace,
+            account["connection_id"],
+            account["provider_account_id"],
+            "conversations",
+            after,
+        ),
+        load,
+        10,
+        refresh,
     )
 
 
 @router.get("/conversations/{conversation_id}/messages")
 async def messages(
     conversation_id: str,
+    request: Request,
     user: CurrentUser = Depends(current_user),
     settings: Settings = Depends(get_settings),
+    after: str | None = Query(default=None, max_length=4096),
+    refresh: bool = False,
 ) -> dict:
-    workspace_id = user_workspace(user.id)
-    require("instagram_business_manage_messages", workspace_id)
-    client, token, _ = connected(workspace_id, settings)
-    return await client.get(
-        f"{conversation_id}/messages", token, fields="id,created_time,from,to,message", limit=100
+    workspace, client, token, account = await read_connection(
+        user, settings, request, "instagram_business_manage_messages"
+    )
+
+    async def load():
+        params = {"limit": 30, **({"after": after} if after else {})}
+        try:
+            return page(
+                await client.get(
+                    f"{conversation_id}/messages",
+                    token,
+                    fields="id,created_time,from,to,message,attachments,shares",
+                    **params,
+                )
+            )
+        except MetaAPIError:
+            result = page(
+                await client.get(
+                    f"{conversation_id}/messages",
+                    token,
+                    fields="id,created_time,from,to,message",
+                    **params,
+                )
+            )
+            result["attachments_unavailable"] = True
+            return result
+
+    return await cached(
+        (
+            workspace,
+            account["connection_id"],
+            account["provider_account_id"],
+            "messages",
+            conversation_id,
+            after,
+        ),
+        load,
+        5,
+        refresh,
     )
 
 
@@ -175,6 +296,17 @@ async def send_message(
     workspace_id = user_workspace(user.id)
     require("instagram_business_manage_messages", workspace_id)
     client, token, account = connected(workspace_id, settings)
+    invalidate(workspace_id)
+    bot, _ = configuration(workspace_id)
+    if bot and bot["enabled"]:
+        pause_contact(
+            {
+                "workspace_id": workspace_id,
+                "connection_id": account["connection_id"],
+                "sender_id": recipient_id,
+            },
+            "Team member replied manually; AI paused",
+        )
     return await client.post(
         f"{account['provider_account_id']}/messages",
         token,
@@ -185,27 +317,44 @@ async def send_message(
 
 @router.get("/insights")
 async def insights(
-    user: CurrentUser = Depends(current_user), settings: Settings = Depends(get_settings)
+    request: Request,
+    user: CurrentUser = Depends(current_user),
+    settings: Settings = Depends(get_settings),
+    refresh: bool = False,
 ) -> dict:
-    workspace_id = user_workspace(user.id)
-    require("instagram_business_manage_insights", workspace_id)
-    client, token, account = connected(workspace_id, settings)
-    profile = await client.get(
-        account["provider_account_id"],
-        token,
-        fields="followers_count,follows_count,media_count,name,username",
+    workspace, client, token, account = await read_connection(
+        user, settings, request, "instagram_business_manage_insights"
     )
-    try:
-        metrics = await client.get(
-            f"{account['provider_account_id']}/insights",
-            token,
-            metric="reach,views,profile_views",
-            period="day",
-            metric_type="total_value",
+
+    async def load():
+        async def metrics():
+            try:
+                return await client.get(
+                    f"{account['provider_account_id']}/insights",
+                    token,
+                    metric="reach,views,profile_views",
+                    period="day",
+                    metric_type="total_value",
+                )
+            except MetaAPIError:
+                return {"data": []}
+
+        profile, values = await asyncio.gather(
+            client.get(
+                account["provider_account_id"],
+                token,
+                fields="followers_count,follows_count,media_count,name,username",
+            ),
+            metrics(),
         )
-    except MetaAPIError:
-        metrics = {"data": []}
-    return {"profile": profile, "metrics": metrics.get("data", [])}
+        return {"profile": profile, "metrics": values.get("data", [])}
+
+    return await cached(
+        (workspace, account["connection_id"], account["provider_account_id"], "insights"),
+        load,
+        60,
+        refresh,
+    )
 
 
 @router.get("/webhook")

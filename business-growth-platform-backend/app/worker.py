@@ -57,7 +57,7 @@ async def keep_lease(holder: str, lost: asyncio.Event):
             if not await asyncio.to_thread(renew_lease, holder):
                 lost.set()
                 return
-        except Exception:
+        except Exception:  # noqa: BLE001 - losing a lease must stop new queue claims
             # Stop claiming new work when ownership cannot be confirmed.
             lost.set()
             logger.warning("Worker lease renewal failed")

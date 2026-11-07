@@ -23,7 +23,6 @@ async def test_resuming_does_not_publish_old_scheduled_content(monkeypatch):
         "scheduled_for": (now - timedelta(minutes=2)).isoformat(),
     }
     store = Store({"publishing_jobs": [old, fresh], "scheduler_configuration": [{"name": "mvp"}]})
-    store.rpc = lambda *a, **kw: SimpleNamespace(execute=lambda: SimpleNamespace(data=True))
     monkeypatch.setattr(worker, "db", lambda: store)
     published = []
 
@@ -43,9 +42,18 @@ async def test_resuming_does_not_publish_old_scheduled_content(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_overlapping_worker_does_not_process_any_queue(monkeypatch):
-    store = Store({})
-    store.rpc = lambda *a, **kw: SimpleNamespace(execute=lambda: SimpleNamespace(data=False))
+    store = Store(
+        {
+            "scheduler_leases": [
+                {
+                    "name": "mvp",
+                    "holder": "other-worker",
+                    "expires_at": (datetime.now(UTC) + timedelta(minutes=1)).isoformat(),
+                }
+            ]
+        }
+    )
     monkeypatch.setattr(worker, "db", lambda: store)
     result = await worker.run_pending(SimpleNamespace())
     assert result["status"] == "busy"
-    assert store.data == {}
+    assert set(store.data) == {"scheduler_leases"}

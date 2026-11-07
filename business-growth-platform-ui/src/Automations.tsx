@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from './lib/api'
 import type { AutomationActivity, AutomationInput, AutomationRule, InstagramMedia } from './lib/api'
+import Modal from './Modal'
 
 const blank: AutomationInput = {name:'',trigger:'welcome',keywords:[],media_ids:[],reply_text:'',enabled:false,daily_limit:20,cooldown_minutes:60}
 const labels = {welcome:'Welcome after the first incoming DM',dm_keyword:'Reply to a DM keyword',comment_keyword:'Comment keyword to private DM'}
@@ -19,19 +20,23 @@ export default function Automations() {
   const [example,setExample]=useState('')
   const [preview,setPreview]=useState('')
   const [mediaError,setMediaError]=useState('')
+  const [review,setReview]=useState<AutomationRule>()
+  const [activityTab,setActivityTab]=useState<'events'|'deliveries'>('events')
+  const [activityPage,setActivityPage]=useState(0)
   const load = async () => {
     try { const [r,a] = await Promise.all([api.automationRules(),api.automationActivity()]);setRules(r.items);setActivity(a) }
     catch(e){setNotice(e instanceof Error?e.message:'Could not load automations')}
   }
-  useEffect(()=>{void load();api.media().then(r=>setMedia(r.data)).catch(e=>setMediaError(e.message));const timer=setInterval(()=>void load(),15000);return()=>clearInterval(timer)},[])
+  useEffect(()=>{void load();api.media().then(r=>setMedia(r.data)).catch(e=>setMediaError(e.message));const timer=setInterval(()=>{if(document.visibilityState==='visible')void load()},15000);return()=>clearInterval(timer)},[])
   function edit(rule:AutomationRule){setEditing(rule.id);setDraft({...rule,enabled:false});setWords(rule.keywords.join(', '));setNotice('Saving changes pauses this rule. Review the updated text before enabling it again.');setPreview('')}
   function reset(){setDraft({...blank});setWords('');setEditing(undefined);setPreview('')}
   async function save(e:FormEvent){e.preventDefault();setBusy(true);try{await api.saveAutomationRule({...draft,keywords:words.split(',').map(x=>x.trim()).filter(Boolean),enabled:false},editing);reset();setNotice('Rule saved and paused. Enable it when you are ready.');await load()}catch(e){setNotice(e instanceof Error?e.message:'Could not save rule')}finally{setBusy(false)}}
   async function toggle(rule:AutomationRule){
-    if(!rule.enabled&&!window.confirm(`Enable “${rule.name}”?\n\nTrigger: ${labels[rule.trigger]}\nKeywords: ${rule.keywords.join(', ')||'First incoming DM'}\nPosts: ${rule.media_ids.join(', ')||'Incoming DMs'}\nReply: ${rule.reply_text}\n\nUp to ${rule.daily_limit} replies per UTC day, with a ${rule.cooldown_minutes}-minute recipient cooldown. This authorizes future automatic messages.`))return
-    setBusy(true);try{await api.saveAutomationRule({...rule,enabled:!rule.enabled},rule.id);setNotice(rule.enabled?'Rule paused.':'Rule enabled.');await load()}catch(e){setNotice(e instanceof Error?e.message:'Could not update rule')}finally{setBusy(false)}
+    setBusy(true);try{await api.saveAutomationRule({...rule,enabled:!rule.enabled},rule.id);setReview(undefined);setNotice(rule.enabled?'Rule paused.':'Rule enabled.');await load()}catch(e){setNotice(e instanceof Error?e.message:'Could not update rule')}finally{setBusy(false)}
   }
   async function test(){try{const r=await api.previewAutomation(example,words.split(',').map(x=>x.trim()));setPreview(r.matched?'Keyword matched. No message was sent.':'No keyword matched. No message was sent.')}catch(e){setPreview(e instanceof Error?e.message:'Preview unavailable')}}
+  const activityCount=activity[activityTab].length
+  const page=Math.min(activityPage,Math.max(0,Math.ceil(activityCount/8)-1))
   return <>
     <section className="page-heading"><p className="eyebrow">Engagement / Automations</p><h1>Helpful replies, under your control.</h1><p>Welcome customers after their first DM, answer keywords, or send a private reply to a comment on a selected post.</p><Link to="/settings/connections">Check your Instagram connection →</Link></section>
     {notice&&<p className="notice wide" role="status">{notice}</p>}
@@ -48,8 +53,17 @@ export default function Automations() {
       </form>
       {draft.trigger!=='welcome'&&<div className="rule-preview"><h3>Try a keyword</h3><input value={example} onChange={e=>setExample(e.target.value)} placeholder="Example customer message"/><button className="button secondary" type="button" onClick={test}>Check match</button>{preview&&<p role="status">{preview}</p>}</div>}
       </article>
-      <section><article className="card"><h2>Your rules</h2>{rules.length===0&&<p>Create your first rule. Nothing will send until you enable it.</p>}{rules.map(rule=><div className="automation-rule" key={rule.id}><span className={`status-pill ${rule.enabled?'published':'cancelled'}`}>{rule.enabled?'Enabled':'Paused'}</span><h3>{rule.name}</h3><p>{labels[rule.trigger]}</p><blockquote>{rule.reply_text}</blockquote><small>{rule.keywords.join(', ')} · {rule.daily_limit}/day · {rule.cooldown_minutes} min cooldown</small><div className="actions"><button className="button secondary" disabled={busy} onClick={()=>edit(rule)}>Edit</button><button className={`button ${rule.enabled?'danger':'primary'}`} disabled={busy} onClick={()=>toggle(rule)}>{rule.enabled?'Pause':'Enable rule'}</button></div></div>)}</article>
-      <article className="card automation-activity"><div className="section-title"><h2>Recent activity</h2><button className="text-button" onClick={()=>void load()}>Refresh</button></div>{!activity.events.length&&<p>No incoming messages or comments received yet. Send a new DM from a different account. If it does not appear here, contact support to check the connection.</p>}{activity.events.map(event=><div className="automation-event" key={event.id}><b>{event.kind==='dm'?'Incoming DM':'Comment'} · {event.status==='pending'?'Queued':event.status}</b><p>{event.detail||(event.status==='pending'?'Queued for an automatic reply. This page refreshes every 15 seconds.':'Checking reply delivery…')}</p><small>{new Date(event.received_at).toLocaleString()}</small></div>)}{activity.deliveries.length>0&&<h3>Reply deliveries</h3>}{activity.deliveries.map(item=><div className="automation-event" key={item.id}><b>{item.status}</b><p>{item.reply_text}</p>{item.detail&&<p>{item.detail}</p>}<small>{new Date(item.created_at).toLocaleString()}</small></div>)}</article></section>
+      <section><article className="card"><h2>Your rules</h2>{rules.length===0&&<p>Create your first rule. Nothing will send until you enable it.</p>}{rules.map(rule=><div className="automation-rule" key={rule.id}><span className={`status-pill ${rule.enabled?'published':'cancelled'}`}>{rule.enabled?'Enabled':'Paused'}</span><h3>{rule.name}</h3><p>{labels[rule.trigger]}</p><blockquote>{rule.reply_text}</blockquote><small>{rule.keywords.join(', ')} · {rule.daily_limit}/day · {rule.cooldown_minutes} min cooldown</small><div className="actions"><button className="button secondary" disabled={busy} onClick={()=>edit(rule)}>Edit</button><button className={`button ${rule.enabled?'danger':'primary'}`} disabled={busy} onClick={()=>{setNotice('');if(rule.enabled)void toggle(rule);else setReview(rule)}}>{rule.enabled?'Pause':'Enable rule'}</button></div></div>)}</article>
+      </section>
     </div>
+    <article className="card automation-activity">
+      <div className="section-title"><div><p className="eyebrow">Delivery log</p><h2>Recent activity</h2></div><button className="button secondary compact" onClick={()=>void load()}>Refresh</button></div>
+      <div className="segmented" aria-label="Activity type">{(['events','deliveries'] as const).map(tab=><button key={tab} aria-pressed={activityTab===tab} onClick={()=>{setActivityTab(tab);setActivityPage(0)}}>{tab==='events'?'Incoming events':'Reply deliveries'} <small>{activity[tab].length}</small></button>)}</div>
+      {!activityCount&&<p className="empty">{activityTab==='events'?'New messages and comments will appear here.':'Your sent replies will appear here.'}</p>}
+      <div className="activity-entries">{activityTab==='events'?activity.events.slice(page*8,page*8+8).map(event=><div className="automation-event" key={event.id}><span className={`status-pill ${event.status}`}>{event.status==='pending'?'Queued':event.status}</span><div><b>{event.kind==='dm'?'Incoming DM':'Comment'}</b><p>{event.detail||(event.status==='pending'?'Waiting for the reply worker.':'Checking delivery…')}</p><small>{new Date(event.received_at).toLocaleString()}</small></div></div>):activity.deliveries.slice(page*8,page*8+8).map(item=><div className="automation-event" key={item.id}><span className={`status-pill ${item.status}`}>{item.status}</span><div><b>{item.rule_id?'Automation reply':'AI reply'}</b><p>{item.reply_text}</p>{item.detail&&<p>{item.detail}</p>}<small>{new Date(item.created_at).toLocaleString()}</small></div></div>)}</div>
+      {activityCount>8&&<div className="pagination"><button className="button secondary compact" disabled={page===0} onClick={()=>setActivityPage(page-1)}>Previous</button><span>{page*8+1}–{Math.min(page*8+8,activityCount)} of {activityCount} recent entries</span><button className="button secondary compact" disabled={(page+1)*8>=activityCount} onClick={()=>setActivityPage(page+1)}>Next</button></div>}
+    </article>
+    {review&&<Modal title={`Enable ${review.name}?`} busy={busy} onClose={()=>setReview(undefined)}><p>{labels[review.trigger]}</p><dl className="review-details"><div><dt>Keywords</dt><dd>{review.keywords.join(', ')||'First incoming DM'}</dd></div><div><dt>Applies to</dt><dd>{review.media_ids.length?review.media_ids.map(id=>media.find(item=>item.id===id)?.caption?.slice(0,70)||'Selected Instagram post').join('; '):'Incoming DMs'}</dd></div><div><dt>Daily limit</dt><dd>{review.daily_limit} replies · resets at midnight UTC</dd></div><div><dt>Cooldown</dt><dd>{review.cooldown_minutes} minutes per recipient</dd></div></dl><h3>Reply customers will receive</h3><blockquote className="dialog-quote">{review.reply_text}</blockquote><p className="muted-text">Enabling this rule authorizes future automatic replies when this trigger matches.</p>{notice&&<p className="notice" role="status">{notice}</p>}<div className="dialog-actions"><button className="button secondary" disabled={busy} onClick={()=>setReview(undefined)}>Keep paused</button><button className="button primary" disabled={busy} onClick={()=>void toggle(review)}>{busy?'Enabling…':'Enable automatic replies'}</button></div></Modal>}
+
   </>
 }

@@ -2,6 +2,7 @@ from functools import lru_cache
 from typing import Any
 
 import httpx
+
 from app.config import get_settings
 from supabase import Client, ClientOptions, create_client
 

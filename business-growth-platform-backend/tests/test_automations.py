@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 import app.automations as engine
+from app import chatbot
 from app.config import Settings, get_settings
 from app.routes import engagement
 from app.routes.automations import RuleInput
@@ -64,6 +65,10 @@ class Query:
 
     def lte(self, k, v):
         self.filters.append(lambda r: r.get(k, "") <= v)
+        return self
+
+    def lt(self, k, v):
+        self.filters.append(lambda r: r.get(k, "") < v)
         return self
 
     def delete(self):
@@ -168,6 +173,7 @@ def context(monkeypatch, settings):
         }
     )
     monkeypatch.setattr(engine, "db", lambda: store)
+    monkeypatch.setattr(chatbot, "db", lambda: store)
     sent = []
 
     async def send(self, path, token, **body):

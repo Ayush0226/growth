@@ -25,8 +25,9 @@ class MetaAPIError(RuntimeError):
 
 
 class InstagramClient:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, http_client: httpx.AsyncClient | None = None):
         self.settings = settings
+        self.http_client = http_client
 
     def authorization_url(self, state: str, include_insights: bool = False) -> str:
         query = urlencode(
@@ -105,6 +106,12 @@ class InstagramClient:
         return self._json(response)
 
     async def get(self, path: str, token: str, **params) -> dict:
+        if self.http_client is not None:
+            response = await self.http_client.get(
+                f"https://graph.instagram.com/{self.settings.meta_graph_api_version}/{path.lstrip('/')}",
+                params={**params, "access_token": token},
+            )
+            return self._json(response)
         async with httpx.AsyncClient(timeout=25) as client:
             response = await client.get(
                 f"https://graph.instagram.com/{self.settings.meta_graph_api_version}/{path.lstrip('/')}",

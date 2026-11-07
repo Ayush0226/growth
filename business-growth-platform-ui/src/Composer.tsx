@@ -36,11 +36,13 @@ export default function ComposerPage() {
     const available = (mode === 'photo' ? 1 : 10) - (mode === 'photo' ? 0 : photos.length)
     if (files.length > available) { setNotice(`Choose up to ${mode === 'photo' ? 1 : 10} images in this selection.`); return }
     const added: Photo[] = []
+    const chosenUrls: string[] = []
     setBusy(true)
     try {
       for (const file of Array.from(files)) {
         if (!['image/jpeg', 'image/jpg'].includes(file.type) || file.size > 8 * 1024 * 1024) throw new Error('Choose JPEG images, each 8 MB or smaller.')
         const url = URL.createObjectURL(file)
+        chosenUrls.push(url)
         urls.current.add(url)
         const size = await new Promise<{ width: number; height: number }>((resolve, reject) => {
           const image = new Image()
@@ -57,7 +59,7 @@ export default function ComposerPage() {
       } else setPhotos(current => [...current, ...added])
       changed()
     } catch (error) {
-      added.forEach(photo => { URL.revokeObjectURL(photo.url); urls.current.delete(photo.url) })
+      chosenUrls.forEach(url => { URL.revokeObjectURL(url); urls.current.delete(url) })
       setNotice(error instanceof Error ? error.message : 'Could not load these images.')
     } finally { setBusy(false) }
   }

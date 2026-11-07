@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     cron_secret: str = "development-only"
     instagram_webhook_verify_token: str = "growthboard-webhook"
     ai_provider_api_key: str | None = None
+    groq_api_key: str | None = None
+    groq_model: str = "openai/gpt-oss-20b"
     scheduler_enabled: bool = True
     scheduler_interval_seconds: int = Field(default=30, ge=10, le=300)
 

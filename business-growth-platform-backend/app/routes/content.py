@@ -287,7 +287,7 @@ async def create_post(
     if payload.publish_now and not payload.enqueue_only and job["status"] == "scheduled":
         try:
             job = await publish_job(job["id"], workspace_id, settings)
-        except Exception:
+        except Exception:  # noqa: BLE001 - preserve an uncertain public publishing result
             raise HTTPException(
                 502, "Publishing needs attention. Check this post in Calendar before retrying."
             ) from None
