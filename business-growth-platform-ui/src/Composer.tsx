@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api } from './lib/api'
 import type { CalendarItem } from './lib/api'
+import { preparePhoto, type ImageFit } from './lib/images'
 
 type Mode = 'photo' | 'carousel' | 'batch'
-type Photo = { id: string; requestId: string; file: File; url: string; width: number; height: number; caption: string; job?: CalendarItem }
+type Photo = { id: string; requestId: string; original: File; file: File; url: string; width: number; height: number; caption: string; job?: CalendarItem }
 
 export default function ComposerPage() {
+  const [params] = useSearchParams()
   const [mode, setMode] = useState<Mode>('photo')
   const [photos, setPhotos] = useState<Photo[]>([])
   const [caption, setCaption] = useState('')
-  const [scheduled, setScheduled] = useState('')
+  const [scheduled, setScheduled] = useState(() => /^\d{4}-\d{2}-\d{2}$/.test(params.get('date') || '') ? `${params.get('date')}T09:00` : '')
+  const [fit, setFit] = useState<ImageFit>('original')
   const [spacing, setSpacing] = useState(0)
   const [approved, setApproved] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -40,18 +43,11 @@ export default function ComposerPage() {
     setBusy(true)
     try {
       for (const file of Array.from(files)) {
-        if (!['image/jpeg', 'image/jpg'].includes(file.type) || file.size > 8 * 1024 * 1024) throw new Error('Choose JPEG images, each 8 MB or smaller.')
-        const url = URL.createObjectURL(file)
+        const prepared = await preparePhoto(file, fit)
+        const url = URL.createObjectURL(prepared.file)
         chosenUrls.push(url)
         urls.current.add(url)
-        const size = await new Promise<{ width: number; height: number }>((resolve, reject) => {
-          const image = new Image()
-          image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight })
-          image.onerror = () => reject(new Error(`Could not open ${file.name}.`))
-          image.src = url
-        })
-        if (size.width < 320 || size.height < 320 || size.width / size.height < 0.8 || size.width / size.height > 1.91) throw new Error(`${file.name}: use at least 320 × 320 pixels, with proportions from 4:5 to 1.91:1.`)
-        added.push({ id: crypto.randomUUID(), requestId: crypto.randomUUID(), file, url, ...size, caption })
+        added.push({ id: crypto.randomUUID(), requestId: crypto.randomUUID(), original: file, ...prepared, url, caption })
       }
       if (mode === 'photo') {
         photos.forEach(photo => { URL.revokeObjectURL(photo.url); urls.current.delete(photo.url) })
@@ -61,6 +57,25 @@ export default function ComposerPage() {
     } catch (error) {
       chosenUrls.forEach(url => { URL.revokeObjectURL(url); urls.current.delete(url) })
       setNotice(error instanceof Error ? error.message : 'Could not load these images.')
+    } finally { setBusy(false) }
+  }
+  async function changeFit(next: ImageFit) {
+    if (locked) return
+    if (!photos.length) { setFit(next); changed(); return }
+    setBusy(true)
+    const replacements: Photo[] = []
+    try {
+      for (const photo of photos) {
+        const prepared = await preparePhoto(photo.original, next)
+        const url = URL.createObjectURL(prepared.file)
+        replacements.push({ ...photo, ...prepared, url })
+      }
+      photos.forEach(photo => { URL.revokeObjectURL(photo.url); urls.current.delete(photo.url) })
+      replacements.forEach(photo => urls.current.add(photo.url))
+      uploads.current.clear(); setPhotos(replacements); setFit(next); changed()
+    } catch (error) {
+      replacements.forEach(photo => URL.revokeObjectURL(photo.url))
+      setNotice(error instanceof Error ? error.message : 'Could not change image fit.')
     } finally { setBusy(false) }
   }
   function remove(id: string) {
@@ -127,12 +142,13 @@ export default function ComposerPage() {
     <section className="card composer-options">
       <label>What are you creating?<select value={mode} disabled={locked} onChange={event => { setMode(event.target.value as Mode); changed() }}><option value="photo">One photo post</option><option value="carousel">One carousel · 2–10 images</option><option value="batch">Several separate posts · up to 10</option></select></label>
       <p>{mode === 'carousel' ? 'One caption for the full carousel. Use matching image proportions and arrange the slides below.' : mode === 'batch' ? 'Each image becomes its own post with its own caption. Instagram processes posts individually; they will not appear at precisely the same instant.' : 'One image and one caption.'}</p>
-      <label>Choose JPEG images<input key={mode + String(submitted)} type="file" accept="image/jpeg" multiple={mode !== 'photo'} disabled={locked} onChange={event => { void choose(event.target.files); event.target.value = '' }} /><small>8 MB per image. Portrait, square and landscape images are supported.</small></label>
+      <label>Image fit<select value={fit} disabled={locked} onChange={event => void changeFit(event.target.value as ImageFit)}><option value="original">Keep original proportions</option><option value="portrait">Portrait · 4:5</option><option value="square">Square · 1:1</option><option value="landscape">Landscape · 1.91:1</option></select><small>Fitted images add white borders where needed. Nothing is cropped. Choose one fit for matching carousel slides.</small></label>
+      <label>Choose images<input key={mode + String(submitted)} type="file" accept="image/jpeg,image/png,image/webp" multiple={mode !== 'photo'} disabled={locked} onChange={event => { void choose(event.target.files); event.target.value = '' }} /><small>JPEG, PNG or WebP · up to 20 MB and 25 megapixels per original. Images are resized and prepared as JPEGs below Instagram’s 8 MB limit. Transparency becomes white. Review the prepared previews before approving.</small></label>
     </section>
     {photos.length > 0 && <div className="post-image-grid">{photos.map((photo, index) => <article className="card post-image-card" key={photo.id}>
       <div className="post-image-heading"><h3>{mode === 'carousel' ? 'Slide' : 'Post'} {index + 1}</h3>{photo.job && <span className="status-pill scheduled">Saved to Calendar</span>}</div>
       <img src={photo.url} alt={`${mode === 'carousel' ? 'Slide' : 'Post'} ${index + 1} preview`} />
-      <small>{photo.file.name} · {photo.width} × {photo.height}</small>
+      <small>{photo.original.name} · {photo.width} × {photo.height} · {(photo.file.size / 1024 / 1024).toFixed(2)} MB prepared</small>
       {mode === 'batch' && <label>Caption<textarea value={photo.caption} maxLength={2200} rows={5} disabled={locked} onChange={event => { setPhotos(current => current.map(item => item.id === photo.id ? { ...item, caption: event.target.value, requestId: crypto.randomUUID() } : item)); changed() }} /><small>{photo.caption.length}/2200 characters</small></label>}
       {!submitted && <div className="actions"><button className="button secondary compact" disabled={busy || index === 0} onClick={() => move(index, -1)}>Move earlier</button><button className="button secondary compact" disabled={busy || index === photos.length - 1} onClick={() => move(index, 1)}>Move later</button><button className="button danger compact" disabled={busy} onClick={() => remove(photo.id)}>Remove</button></div>}
     </article>)}</div>}

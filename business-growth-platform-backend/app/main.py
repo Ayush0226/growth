@@ -11,7 +11,17 @@ from postgrest.exceptions import APIError
 from app.config import get_settings
 from app.database import db, one
 from app.meta import MetaAPIError
-from app.routes import access, automations, chatbot, content, engagement, instagram, workspaces
+from app.routes import (
+    access,
+    automations,
+    calendar,
+    chatbot,
+    content,
+    engagement,
+    instagram,
+    workspaces,
+)
+from app.upload_limits import MediaUploadLimit
 from app.worker import worker_loop
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -37,8 +47,9 @@ async def lifespan(application: FastAPI):
         await instagram_http.aclose()
 
 
-app = FastAPI(title="Growthboard API", version="0.5.0", lifespan=lifespan)
+app = FastAPI(title="Growthboard API", version="0.6.0", lifespan=lifespan)
 settings = get_settings()
+app.add_middleware(MediaUploadLimit)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[str(settings.frontend_url).rstrip("/")],
@@ -53,6 +64,7 @@ app.include_router(engagement.router)
 app.include_router(automations.router)
 app.include_router(chatbot.router)
 app.include_router(access.router)
+app.include_router(calendar.router)
 
 
 @app.get("/health")

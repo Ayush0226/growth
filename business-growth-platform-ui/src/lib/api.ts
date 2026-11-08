@@ -96,6 +96,9 @@ export const api = {
   uploadMedia: (file: File) => { const body = new FormData(); body.append('file', file); return request<{ id: string, width: number, height: number }>('/api/media', { method: 'POST', body }) },
   createPost: (payload: { caption: string, media_asset_id?: string, media_asset_ids?: string[], request_id?: string, enqueue_only?: boolean, scheduled_for?: string, timezone: string, approved: boolean, publish_now: boolean }) => request<{ job: CalendarItem }>('/api/content/posts', { method: 'POST', body: JSON.stringify(payload) }),
   calendar: () => request<{ items: CalendarItem[] }>('/api/content/calendar'),
+  calendarSummary: (start:string,end:string,timezone:string,refresh=false) => read<CalendarSummary>(`/api/calendar/summary?${new URLSearchParams({start,end,timezone})}`,30_000,refresh),
+  calendarDay: (on:string,kind:CalendarKind,timezone:string,offset=0) => request<CalendarDay>(`/api/calendar/day?${new URLSearchParams({on,kind,timezone,offset:String(offset)})}`),
+  dailyInsights: (on:string,timezone:string,refresh=false) => read<Insights>(`/api/instagram/insights?${new URLSearchParams({on,timezone})}`,60_000,refresh),
   publishJob: (id: string) => request<CalendarItem>(`/api/publishing/jobs/${id}/publish`, { method: 'POST' }),
   updateCalendarItem: (id: string, payload: {caption?:string, scheduled_for?:string}) => request<CalendarItem>(`/api/content/calendar/${id}`, {method:'PATCH', body:JSON.stringify(payload)}),
   cancelCalendarItem: (id: string) => request<CalendarItem>(`/api/content/calendar/${id}`, {method:'DELETE'}),
@@ -125,7 +128,12 @@ export type InstagramComment={id:string;text:string;timestamp:string;username?:s
 export type MessageAttachment={id?:string;mime_type?:string;name?:string;file_url?:string;image_data?:{url?:string;preview_url?:string};video_data?:{url?:string};payload?:{url?:string}}
 export type DirectMessage={id:string;created_time:string;message?:string;from:{id:string;username?:string};to?:{data:{id:string;username?:string}[]};attachments?:{data:MessageAttachment[]};shares?:{data:{link?:string;name?:string}[]}}
 export type Conversation={id:string;updated_time:string;participants:{data:{id:string;username?:string}[]};messages?:{data:DirectMessage[]}}
-export type Insights={profile:{followers_count?:number;follows_count?:number;media_count?:number;username?:string};metrics:{name:string;total_value?:{value:number};values?:{value:number}[]}[]}
+export type Insights={profile:{followers_count?:number;follows_count?:number;media_count?:number;username?:string};metrics:{name:string;total_value?:{value:number};values?:{value:number}[]}[];metrics_status?:'available'|'unavailable'|'future';requested_date?:string;provisional?:boolean}
+
+export type CalendarKind='posts'|'published'|'automation'|'deliveries'|'ai'
+export type CalendarSummary={days:Record<string,Record<CalendarKind,number>>;truncated_categories:CalendarKind[];timezone:string}
+export type CalendarRecord=Partial<CalendarItem>&{id:string;status:string;kind?:string;detail?:string;received_at?:string;processed_at?:string;created_at?:string;purpose?:'preview'|'live';reply_text?:string}
+export type CalendarDay={items:CalendarRecord[];has_more:boolean;next_offset:number}
 
 export type CalendarItem = {
   id: string

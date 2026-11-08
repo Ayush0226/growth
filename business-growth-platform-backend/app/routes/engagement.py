@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
@@ -12,6 +13,7 @@ from app.config import Settings, get_settings
 from app.database import db, one
 from app.meta import InstagramClient, MetaAPIError
 from app.read_cache import cached, invalidate, page
+from app.routes.calendar import bounds
 from app.routes.instagram import user_workspace
 from app.security import CurrentUser, TokenCipher, current_user
 
@@ -321,7 +323,20 @@ async def insights(
     user: CurrentUser = Depends(current_user),
     settings: Settings = Depends(get_settings),
     refresh: bool = False,
+    on: date | None = None,
+    timezone: str = Query(default="UTC", max_length=80),
 ) -> dict:
+    period = None
+    if on is not None:
+        if on.year >= 9999:
+            raise HTTPException(422, "Choose a supported date")
+        since, until, zone = bounds(on, on + timedelta(days=1), timezone)
+        if on > datetime.now(zone).date():
+            return {"profile": {}, "metrics": [], "metrics_status": "future", "requested_date": str(on)}
+        period = {
+            "since": int(datetime.fromisoformat(since).timestamp()),
+            "until": min(int(datetime.fromisoformat(until).timestamp()), int(datetime.now(UTC).timestamp())),
+        }
     workspace, client, token, account = await read_connection(
         user, settings, request, "instagram_business_manage_insights"
     )
@@ -329,15 +344,17 @@ async def insights(
     async def load():
         async def metrics():
             try:
-                return await client.get(
+                result = await client.get(
                     f"{account['provider_account_id']}/insights",
                     token,
                     metric="reach,views,profile_views",
                     period="day",
                     metric_type="total_value",
+                    **(period or {}),
                 )
+                return result, "available" if result.get("data") else "unavailable"
             except MetaAPIError:
-                return {"data": []}
+                return {"data": []}, "unavailable"
 
         profile, values = await asyncio.gather(
             client.get(
@@ -347,10 +364,15 @@ async def insights(
             ),
             metrics(),
         )
-        return {"profile": profile, "metrics": values.get("data", [])}
+        result, metrics_status = values
+        return {
+            "profile": profile, "metrics": result.get("data", []),
+            "metrics_status": metrics_status, "requested_date": str(on) if on else None,
+            "timezone": timezone, "provisional": bool(on and on == datetime.now(zone).date()),
+        }
 
     return await cached(
-        (workspace, account["connection_id"], account["provider_account_id"], "insights"),
+        (workspace, account["connection_id"], account["provider_account_id"], "insights", str(on), timezone),
         load,
         60,
         refresh,

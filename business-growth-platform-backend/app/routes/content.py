@@ -1,49 +1,36 @@
-import io
+import asyncio
 import secrets
 import uuid
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile, status
-from PIL import Image, UnidentifiedImageError
 from pydantic import AwareDatetime, BaseModel, Field, field_validator, model_validator
 
 from app.config import Settings, get_settings
 from app.database import db, one
+from app.images import MAX_SOURCE_BYTES, prepare_image
 from app.publishing import publish_job
 from app.routes.instagram import user_workspace
 from app.security import CurrentUser, current_user
 
 router = APIRouter(prefix="/api", tags=["content"])
+image_preparation = asyncio.Semaphore(1)
 
 
 @router.post("/media", status_code=status.HTTP_201_CREATED)
 async def upload_media(
     file: UploadFile = File(...), user: CurrentUser = Depends(current_user)
 ) -> dict:
-    workspace_id = user_workspace(user.id)
-    content = await file.read(8 * 1024 * 1024 + 1)
-    if len(content) > 8 * 1024 * 1024:
-        raise HTTPException(422, "Image must be 8 MB or smaller")
-    if file.content_type not in {"image/jpeg", "image/jpg"}:
-        raise HTTPException(422, "The MVP currently accepts JPEG images only")
-    try:
-        with Image.open(io.BytesIO(content)) as image:
-            if image.format != "JPEG":
-                raise HTTPException(422, "Upload a JPEG image, not a renamed file")
-            image.verify()
-        with Image.open(io.BytesIO(content)) as image:
-            width, height = image.size
-    except (UnidentifiedImageError, OSError) as exc:
-        raise HTTPException(422, "The uploaded file is not a valid JPEG") from exc
-    ratio = width / height
-    errors = []
-    if width < 320 or height < 320:
-        errors.append("Image dimensions must be at least 320×320")
-    if not 0.8 <= ratio <= 1.91:
-        errors.append("Aspect ratio must be between 4:5 and 1.91:1")
-    if errors:
-        raise HTTPException(422, errors)
+    workspace_id = await asyncio.to_thread(user_workspace, user.id)
+    # Decode one image at a time; move CPU and storage work off the API event loop.
+    async with image_preparation:
+        content = await file.read(MAX_SOURCE_BYTES + 1)
+        content, width, height = await asyncio.to_thread(prepare_image, content)
+        return await asyncio.to_thread(store_image, workspace_id, user.id, content, width, height)
+
+
+def store_image(workspace_id: str, user_id: str, content: bytes, width: int, height: int):
     asset_id = str(uuid.uuid4())
     path = f"{workspace_id}/{asset_id}/original.jpg"
     db().storage.from_("instagram-media").upload(
@@ -56,7 +43,7 @@ async def upload_media(
             {
                 "id": asset_id,
                 "workspace_id": workspace_id,
-                "created_by": user.id,
+                "created_by": user_id,
                 "original_storage_path": path,
                 "prepared_storage_path": path,
                 "media_type": "image",
