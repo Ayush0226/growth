@@ -1,6 +1,6 @@
 # Growthboard WhatsApp activation: steps 1 to 7
 
-Checked 10 November 2026. Source is saved in the original Instagram Automation folder. The WhatsApp product is built locally and its production database upgrade is complete; deployment and live Meta activation are pending.
+Checked 10 November 2026. Source is saved in the original Instagram Automation folder. The WhatsApp product and production database upgrade are deployed. The backend callback was verified directly over HTTPS. WhatsApp messaging stays disabled while Meta callback saving, signup configuration and live-number acceptance are completed.
 
 ## 1. Check the existing Meta app
 
@@ -30,16 +30,14 @@ The upgrade combines migrations 007 and 008. The initial application schema was 
 
 ## 3. Publish the updated Growthboard source
 
-The user confirmed **My Workspace**, Render connection **Primary**. Both existing services are connected to `https://github.com/Ayush0226/growth`, branch `main`, with automatic deployment on commit. Their current live release is `d0d1cb7be02a578d4963241382786754417fad64`, which predates the local WhatsApp product changes.
+**Completed:** both existing services in the confirmed **My Workspace**, Render connection **Primary**, are live on application commit `9658b7bd7f1ed7d384da8a4e22bc425b5196f0a0` (API `0.7.0`). The repository remains `https://github.com/Ayush0226/growth`, branch `main`, with automatic deployment on commit.
 
-Review and publish the intended source changes to this repository, then monitor the automatic deployments of the existing services:
+The existing services are:
 
 - Frontend: https://growthboard-web.onrender.com
 - Backend: https://business-growth-platform-api.onrender.com
 
-Keep `WHATSAPP_ENABLED=false` for this initial release. Preserve the existing encryption key and Instagram configuration. Check the frontend and backend readiness after deployment.
-
-**Finished when:** both services run the updated release successfully. No additional application service is required by the current implementation.
+`WHATSAPP_ENABLED=false` is installed for this initial release. The existing encryption key and Instagram configuration were preserved. Frontend HTTP 200 and backend readiness HTTP 200 were verified. No additional application service was created.
 
 ## 4. Configure Meta signup and webhook delivery
 
@@ -69,7 +67,7 @@ Use the identical verification value in Meta and the backend. Verify the callbac
 
 **Current webhook-screen checkpoint:** Meta's pasted Production setup page explicitly says Development mode receives only dashboard test webhooks, and production data (including app admins/developers/testers) requires Live mode. Callback verification and dashboard test events are separate from production-message acceptance. Do not count a Development-mode dashboard test as a completed real-message test. Move to Live only when the applicable app requirements and pilot configuration are ready.
 
-A random verification token has been prepared in the ignored private file `business-growth-platform-backend/.env.whatsapp-setup`. This is a self-chosen callback verification value, separate from the Meta API access token. It has not been installed on Render. The updated backend also remains unpublished, so the proposed callback must not be presented as verified yet. The client-certificate option is optional; the current implementation uses HTTPS and Meta's signed-event validation and has no client-certificate setup.
+A random verification token is saved in the ignored private file `business-growth-platform-backend/.env.whatsapp-setup` and installed on the Render backend, together with the correct WhatsApp app ID and disabled feature flag. This is a self-chosen callback verification value, separate from the Meta API access token. Direct live checks passed: correct-token challenge HTTP 200 with matching plain-text body, incorrect-token HTTP 403, API readiness HTTP 200 on `0.7.0`, and disabled message intake HTTP 503. The user still needs to retry Meta's Verify and save action using these matching settings. The client-certificate option is optional; the current implementation uses HTTPS and Meta's signed-event validation and has no client-certificate setup.
 
 **Finished when:** Meta verifies the callback, the correct signup configuration is saved, and the production app reports that signup is configured.
 

@@ -1,6 +1,6 @@
 # WhatsApp in Growthboard
 
-Implemented locally on 10 November 2026. WhatsApp shares the existing FastAPI backend, Supabase workspace and React app. It has not been activated or acceptance-tested against a live Meta customer account. The production database upgrade is complete. Public-launch work also includes adding and testing username/BSUID identity support; the current messaging flow assumes contact phone numbers.
+Implemented and deployed on 10 November 2026 as application commit `9658b7b` (API `0.7.0`). WhatsApp shares the existing FastAPI backend, Supabase workspace and React app. The production database upgrade and direct HTTPS callback-verification checks are complete. WhatsApp messaging remains disabled; Meta's Verify and save action, customer signup configuration and live-number acceptance remain pending. Public-launch work also includes adding and testing username/BSUID identity support; the current messaging flow assumes contact phone numbers.
 
 ## Customer experience
 
