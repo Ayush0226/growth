@@ -51,7 +51,7 @@ async function read<T>(path: string, ttl: number, refresh = false): Promise<T> {
   return promise
 }
 function pagedPath(path: string, after?: string) { return after ? `${path}?after=${encodeURIComponent(after)}` : path }
-async function request<T>(path: string, init?: RequestInit, expectedUser?: string): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit, expectedUser?: string): Promise<T> {
   const { data } = await supabase.auth.getSession()
   if (!data.session) throw new Error('Please sign in again.')
   if (expectedUser && data.session.user.id !== expectedUser) throw new Error('Your account changed. Please refresh this page.')

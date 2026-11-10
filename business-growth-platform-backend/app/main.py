@@ -19,9 +19,11 @@ from app.routes import (
     content,
     engagement,
     instagram,
+    whatsapp,
     workspaces,
 )
 from app.upload_limits import MediaUploadLimit
+from app.whatsapp import WhatsAppAPIError, WhatsAppDeliveryUncertain
 from app.worker import worker_loop
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -47,7 +49,7 @@ async def lifespan(application: FastAPI):
         await instagram_http.aclose()
 
 
-app = FastAPI(title="Growthboard API", version="0.6.0", lifespan=lifespan)
+app = FastAPI(title="Growthboard API", version="0.7.0", lifespan=lifespan)
 settings = get_settings()
 app.add_middleware(MediaUploadLimit)
 app.add_middleware(
@@ -65,6 +67,21 @@ app.include_router(automations.router)
 app.include_router(chatbot.router)
 app.include_router(access.router)
 app.include_router(calendar.router)
+app.include_router(whatsapp.router)
+
+
+@app.exception_handler(WhatsAppAPIError)
+async def whatsapp_error(_request, error):
+    return JSONResponse(
+        status_code=502,
+        content={
+            "detail": (
+                "WhatsApp delivery is unconfirmed. Inspect activity before retrying."
+                if isinstance(error, WhatsAppDeliveryUncertain)
+                else "Meta could not complete this WhatsApp action. Check account permissions, billing and eligibility."
+            )
+        },
+    )
 
 
 @app.get("/health")
@@ -119,7 +136,9 @@ def readiness():
             "scheduler": scheduler or {},
             "background_worker_enabled": settings.scheduler_enabled,
             "ai_provider_configured": bool(settings.groq_api_key),
-            "pilot_access_configured": bool(settings.pilot_access_code and settings.pilot_access_code.get_secret_value()),
+            "pilot_access_configured": bool(
+                settings.pilot_access_code and settings.pilot_access_code.get_secret_value()
+            ),
         }
     except Exception:  # noqa: BLE001 - readiness reports a redacted dependency status
         return JSONResponse(

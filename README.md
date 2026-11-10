@@ -75,7 +75,9 @@ No schema upgrade is required for this change: the original content tables alrea
 
 ## Boundaries
 
-WhatsApp, branching chatbot flows, AI media generation, Reels/Stories/video-carousel publishing, billing and multi-account agency workflows are outside this MVP. Insights require their own optional permission. This is a private pilot until Meta configuration, legal/contact details and real-account acceptance checks are complete.
+WhatsApp is implemented behind its setup flag; see [WhatsApp setup](WHATSAPP_MVP_PLAN.md) and apply `APPLY_WHATSAPP.sql` before enabling it. The inbox, text rules, optional business AI, contact consent, templates, campaigns and direct Meta billing share this application. Live account acceptance and Meta approvals remain required.
+
+Branching chatbot flows, AI media generation, Reels/Stories/video-carousel publishing, billing and multi-account agency workflows are outside this MVP. Insights require their own optional permission. This is a private pilot until Meta configuration, legal/contact details and real-account acceptance checks are complete.
 
 References: [Meta's official Instagram collection](https://www.postman.com/meta/instagram/folder/1z5vxzu/instagram-api-with-instagram-login) and [Supabase scheduled HTTP calls](https://supabase.com/docs/guides/database/extensions/pg_net).
 

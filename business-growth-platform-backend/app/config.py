@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     pilot_access_code: SecretStr | None = None
     scheduler_enabled: bool = True
     scheduler_interval_seconds: int = Field(default=30, ge=10, le=300)
+    whatsapp_enabled: bool = False
+    whatsapp_app_id: str | None = None
+    whatsapp_app_secret: str | None = None
+    whatsapp_signup_config_id: str | None = None
+    whatsapp_webhook_verify_token: str | None = None
 
 
 @lru_cache

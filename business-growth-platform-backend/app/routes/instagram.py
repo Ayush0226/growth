@@ -32,7 +32,7 @@ def user_workspace(user_id: str) -> str:
     )
     if not member:
         raise HTTPException(
-            status.HTTP_409_CONFLICT, "Create a workspace before connecting Instagram"
+            status.HTTP_409_CONFLICT, "Create a workspace before connecting a business account"
         )
     return member["workspace_id"]
 

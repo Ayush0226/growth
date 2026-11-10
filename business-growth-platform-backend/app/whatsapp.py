@@ -1,4 +1,4 @@
-"""WhatsApp Cloud API foundation. No automatic sends or public routes are enabled here."""
+"""WhatsApp Cloud API transport and signed event normalization."""
 
 import hashlib
 import hmac
@@ -11,6 +11,10 @@ import httpx
 
 class WhatsAppAPIError(Exception):
     """A redacted provider failure suitable for a future API response."""
+
+    def __init__(self, message: str, code: int | None = None):
+        super().__init__(message)
+        self.code = code
 
 
 class WhatsAppDeliveryUncertain(WhatsAppAPIError):
@@ -124,6 +128,7 @@ def parse_events(payload: dict) -> list[dict]:
                         "occurred_at": when,
                         "delivery_status": state,
                         "error_code": code if isinstance(code, int) else None,
+                        "pricing": object_value(status.get("pricing")),
                         "event_key": hashlib.sha256(
                             f"{phone}:{message_id}:{state}:{when}".encode()
                         ).hexdigest(),
@@ -165,15 +170,120 @@ class WhatsAppClient:
             if not isinstance(body, dict):
                 raise TypeError("Invalid response object")
         except (ValueError, TypeError) as exc:
-            if method == "POST" and response.is_success:
+            if method == "POST" and (response.is_success or response.status_code >= 500):
                 raise WhatsAppDeliveryUncertain(
                     "WhatsApp returned an unreadable send result. Check delivery before retrying."
                 ) from exc
             raise WhatsAppAPIError("WhatsApp returned an unreadable result.") from exc
+        if method == "POST" and response.status_code >= 500:
+            raise WhatsAppDeliveryUncertain(
+                "WhatsApp delivery is unconfirmed. Check activity before retrying."
+            )
         if not response.is_success or body.get("error"):
             # Never expose provider error strings, which may echo tokens or submitted text.
-            raise WhatsAppAPIError(f"WhatsApp rejected the request (HTTP {response.status_code}).")
+            code = object_value(body.get("error")).get("code")
+            raise WhatsAppAPIError(
+                f"WhatsApp rejected the request (HTTP {response.status_code}).",
+                code if isinstance(code, int) else None,
+            )
         return body
+
+    async def rows(self, path: str, token: str, **params) -> list[dict]:
+        result = []
+        for _ in range(20):
+            page = await self._request("GET", path, token, params={"limit": 100, **params})
+            result.extend(object_rows(page.get("data")))
+            paging = object_value(page.get("paging"))
+            after = object_value(paging.get("cursors")).get("after")
+            if not paging.get("next") or not after:
+                return result
+            params["after"] = after
+        raise WhatsAppAPIError(
+            "Too many account records. Contact support to narrow this connection."
+        )
+
+    async def validate_connection(
+        self, waba: str, phone: str, token: str, app_id: str, app_secret: str
+    ) -> dict:
+        if not waba.isdigit() or not phone.isdigit():
+            raise ValueError("Invalid WhatsApp account or phone ID")
+        debug = await self._request(
+            "GET", "debug_token", f"{app_id}|{app_secret}", params={"input_token": token}
+        )
+        data = object_value(debug.get("data"))
+        scopes = set(data.get("scopes") or [])
+        if (
+            not data.get("is_valid")
+            or str(data.get("app_id")) != app_id
+            or not {"whatsapp_business_management", "whatsapp_business_messaging"}.issubset(scopes)
+        ):
+            raise WhatsAppAPIError(
+                "Connection authorization or WhatsApp permissions are incomplete."
+            )
+        phones = await self.rows(
+            f"{waba}/phone_numbers", token, fields="id,display_phone_number,verified_name"
+        )
+        match = next((p for p in phones if str(p.get("id")) == phone), None)
+        if not match:
+            raise WhatsAppAPIError(
+                "The selected phone does not belong to the authorized WhatsApp account."
+            )
+        # Management access alone does not prove that this app is subscribed.
+        await self._request("POST", f"{waba}/subscribed_apps", token)
+        return match
+
+    async def exchange_code(self, code: str, app_id: str, app_secret: str) -> str:
+        body = await self._request(
+            "GET",
+            "oauth/access_token",
+            f"{app_id}|{app_secret}",
+            params={"client_id": app_id, "client_secret": app_secret, "code": code},
+        )
+        token = body.get("access_token")
+        if not isinstance(token, str) or not token:
+            raise WhatsAppAPIError("Meta did not return connection authorization.")
+        return token
+
+    async def templates(self, waba: str, token: str) -> list[dict]:
+        if not waba.isdigit():
+            raise ValueError("Invalid WhatsApp account ID")
+        return await self.rows(
+            f"{waba}/message_templates", token, fields="id,name,language,status,category,components"
+        )
+
+    async def create_template(self, waba: str, values: dict, token: str) -> dict:
+        return await self._request("POST", f"{waba}/message_templates", token, json=values)
+
+    async def send_template(
+        self, phone: str, recipient: str, template: dict, parameters: list[str], token: str
+    ) -> str:
+        if not phone.isdigit() or not re.fullmatch(r"\d{7,15}", recipient):
+            raise ValueError("Invalid WhatsApp number")
+        payload = {"name": template["name"], "language": {"code": template["language"]}}
+        if parameters:
+            payload["components"] = [
+                {
+                    "type": "body",
+                    "parameters": [{"type": "text", "text": value} for value in parameters],
+                }
+            ]
+        result = await self._request(
+            "POST",
+            f"{phone}/messages",
+            token,
+            json={
+                "messaging_product": "whatsapp",
+                "to": recipient,
+                "type": "template",
+                "template": payload,
+            },
+        )
+        messages = object_rows(result.get("messages"))
+        if not messages or not messages[0].get("id"):
+            raise WhatsAppDeliveryUncertain(
+                "Delivery is unconfirmed. Check activity before retrying."
+            )
+        return messages[0]["id"]
 
     async def phone_details(self, phone_number_id: str, token: str) -> dict:
         if not phone_number_id.isdigit():
@@ -183,6 +293,13 @@ class WhatsAppClient:
             phone_number_id,
             token,
             params={"fields": "id,display_phone_number,verified_name"},
+        )
+
+    async def register_number(self, phone: str, pin: str, token: str):
+        if not phone.isdigit() or not re.fullmatch(r"\d{6}", pin):
+            raise ValueError("Invalid number or verification PIN")
+        return await self._request(
+            "POST", f"{phone}/register", token, json={"messaging_product": "whatsapp", "pin": pin}
         )
 
     async def send_text(self, phone_number_id: str, recipient: str, text: str, token: str) -> str:

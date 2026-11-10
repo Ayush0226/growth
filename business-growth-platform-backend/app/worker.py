@@ -9,6 +9,7 @@ from app.automations import process_event
 from app.config import Settings
 from app.database import db, one
 from app.publishing import publish_job
+from app.whatsapp_service import run_pending as run_whatsapp
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +182,14 @@ async def run_pending(settings: Settings) -> dict:
             except Exception as exc:  # noqa: BLE001 - reconcile without replaying public sends
                 await asyncio.to_thread(finish_interrupted, event, exc)
                 result["failures"] += 1
+        if getattr(settings, "whatsapp_enabled", False) and not lost.is_set():
+            try:
+                result["whatsapp"] = await asyncio.to_thread(
+                    lambda: asyncio.run(run_whatsapp(settings, lost))
+                )
+            except Exception:  # noqa: BLE001 - isolate optional WhatsApp queue failures
+                result["failures"] += 1
+                logger.warning("WhatsApp worker unavailable; inspect setup and message activity")
         await asyncio.to_thread(
             lambda: (
                 db()
