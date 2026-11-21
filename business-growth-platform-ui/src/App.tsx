@@ -11,6 +11,8 @@ import ComposerPage from './Composer'
 import CalendarPage from './Calendar'
 import CommentsPage from './Comments'
 import WhatsApp from './WhatsApp'
+import legalContent from './legalContent.json'
+import GrowboardHome from './GrowboardHome'
 import { api, setApiUser, getCached, type CalendarItem, type InstagramConnection, type Insights } from './lib/api'
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -18,7 +20,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 }
 
 function Home() {
-  return <Shell><section className="hero"><span className="eyebrow">Instagram publishing, kept simple</span><h1>Plan with confidence.<br/>Publish with approval.</h1><p>One calm workspace for creating, scheduling, and safely publishing content to your professional Instagram account.</p><div className="actions"><Link className="button primary" to="/login">Start private access</Link><Link className="button secondary" to="/privacy">How we handle data</Link></div><div className="proof"><span>One workspace</span><span>Approval required</span><span>Disconnect anytime</span></div></section></Shell>
+  return <GrowboardHome />
 }
 
 const AppAccess = createContext<{state?:AccessState;error:string;refresh:()=>Promise<void>}>({error:'',refresh:async()=>{}})
@@ -125,13 +127,9 @@ function Inbox(){return <Shell><InboxPage/></Shell>}
 
 function InsightsPage(){const [data,setData]=useState<Insights|null>(getCached<Insights>('/api/instagram/insights')||null);const [message,setMessage]=useState('');useEffect(()=>{api.insights().then(setData).catch(e=>setMessage(e.message))},[]);const metric=(name:string)=>data?.metrics.find(x=>x.name===name)?.total_value?.value??data?.metrics.find(x=>x.name===name)?.values?.at(-1)?.value??'—';return <Shell><section className="page-heading"><p className="eyebrow">Performance</p><h1>Insights</h1><p>A focused view of account growth and audience attention.</p></section><div className="section-title insight-toolbar"><span>{data?'Recently loaded Instagram metrics':'Loading Instagram metrics…'}</span><button className="button secondary compact" onClick={()=>{setMessage('Refreshing…');api.insights(true).then(result=>{setData(result);setMessage('Metrics refreshed.')}).catch(error=>setMessage(error.message))}}>Refresh metrics</button></div><div className={`metric-grid ${!data?'is-loading':''}`}><article><span>Followers</span><strong>{data?.profile.followers_count??'—'}</strong><small>Current audience</small></article><article><span>Reach</span><strong>{metric('reach')}</strong><small>Accounts reached</small></article><article><span>Views</span><strong>{metric('views')}</strong><small>Content views</small></article><article><span>Profile views</span><strong>{metric('profile_views')}</strong><small>Profile activity</small></article></div><article className="card insight-note"><p className="eyebrow">Reporting</p><h2>Performance, without the noise.</h2><p>Metrics shown here come directly from Instagram. Account-level reporting availability depends on the professional account type and the permission granted during connection.</p></article>{message&&<p className="notice wide">{message}</p>}</Shell>}
 
-const legal: Record<string, {title:string, body:string[]}> = {
-  privacy: { title:'Privacy policy', body:['Growthboard uses authorised professional account details, publishing content, comments and messages to provide the features you enable. Instagram and WhatsApp messages and Instagram comment events can trigger the automation rules you explicitly enable.','We store encrypted Instagram and WhatsApp access tokens, WhatsApp account and phone identifiers, customer contacts, consent and opt-out records, message and campaign history, publishing assets and captions, incoming text events needed for automations, your rule settings, and delivery history. Publishing image links are temporary. Contact the pilot administrator about retention and deletion of stored workspace data.','Disconnect Instagram in Settings or WhatsApp in its Connection & billing section to remove stored authorization and stop pending work for that channel. WhatsApp messaging charges are paid directly to Meta; no Growthboard messaging wallet or guaranteed cash signup grant is provided. Request deletion of stored workspace data through the pilot administrator using your registered email. The service uses Meta, Supabase and Render to provide these features. If you enable the business AI assistant, your business information and customer messages with recent conversation context are sent to Groq to generate replies. Preview questions are also sent to Groq when you request a preview. AI is optional and starts paused.'] },
-  terms: { title:'Terms of service', body:['This private-testing service helps approved businesses manage Instagram content and WhatsApp business conversations, automations and consent-based template campaigns. You remain responsible for your content, permissions, and compliance with Instagram terms and applicable law.','The service is provided for evaluation during the private pilot and may change. Do not use it for unlawful, deceptive, unsolicited, or rights-infringing activity. Review the exact content before publishing and enable automation rules only for replies you authorise.'] },
-  support: { title:'Support', body:['For pilot support, contact the address supplied with your invitation. Include your workspace name and error reference, but never send passwords, access tokens, or Meta app secrets.'] },
-  'data-deletion': { title:'Data deletion', body:['Disconnect Instagram in Settings or WhatsApp in its Connection & billing section to remove stored authorization and stop pending work for that channel. This does not delete your Meta account or billing balance. For deletion of stored account data, contact the pilot administrator from your registered account email.','Until the self-service deletion screen is enabled, contact the pilot support address. We will verify account ownership before processing the request.'] },
-}
-function Legal({ kind }: {kind:string}) { const page=legal[kind]; return <Shell><article className="legal"><p className="eyebrow">Last updated November 10, 2026</p><h1>{page.title}</h1>{page.body.map((p,i)=><p key={i}>{p}</p>)}</article></Shell> }
+const legal: Record<string, {title:string, body:string[]}> = legalContent
+
+function Legal({ kind }: {kind:string}) { const page=legal[kind]; return <Shell><article className="legal"><p className="eyebrow">Last updated November 12, 2026</p><h1>{page.title}</h1>{page.body.map((p,i)=><p key={i}>{p}</p>)}</article></Shell> }
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null); const [ready, setReady] = useState(false)

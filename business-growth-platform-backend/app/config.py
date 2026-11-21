@@ -17,6 +17,24 @@ class Settings(BaseSettings):
     supabase_service_role_key: str
     token_encryption_key: str = Field(min_length=32)
     frontend_url: HttpUrl
+    additional_frontend_origins: str = ""
+
+    def cors_origins(self) -> list[str]:
+        from urllib.parse import urlsplit
+
+        origins = [str(self.frontend_url).rstrip("/")]
+        for raw in self.additional_frontend_origins.split(","):
+            origin = raw.strip().rstrip("/")
+            if not origin:
+                continue
+            parsed = urlsplit(origin)
+            if (parsed.scheme not in {"https", "http"} or not parsed.hostname
+                    or parsed.username or parsed.password or parsed.path
+                    or parsed.query or parsed.fragment or "*" in origin):
+                raise ValueError("Additional frontend origins must be exact HTTP(S) origins")
+            origins.append(origin)
+        return list(dict.fromkeys(origins))
+
     cron_secret: str = "development-only"
     instagram_webhook_verify_token: str = "growthboard-webhook"
     ai_provider_api_key: str | None = None

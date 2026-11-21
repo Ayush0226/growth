@@ -1,0 +1,38 @@
+{
+  "privacy": {
+    "title": "Privacy policy",
+    "body": [
+      "Growthboard is an AS Techzone product for managing authorised Instagram professional accounts and WhatsApp business messaging. Privacy and support contact: ayushsony126@gmail.com.",
+      "We process your account email, workspace membership, connected professional account details, Instagram content, captions, comments, messages and insights, and WhatsApp business account and phone identifiers, customer contacts, consent and opt-out records, messages, templates, campaign settings and delivery events. We store encrypted provider access tokens to perform the features you authorise. Never send us your Meta password or app secret by email.",
+      "We use this information to authenticate you, connect the business accounts you manage, display your inbox and insights, publish approved content, and execute the messaging and automation rules you enable. You are responsible for obtaining permission to contact recipients. Disconnecting a channel stops pending work for that channel and removes its stored authorisation; it does not delete your Meta account, Meta billing balance or all historical workspace data.",
+      "Meta provides Instagram and WhatsApp APIs. Supabase provides application data, authentication and media storage; Render hosts the application. When you enable the optional business AI assistant, business information, customer message text and recent conversation context are sent to Groq to generate replies. Preview questions are sent to Groq when you request a preview. AI starts paused. Do not include sensitive information that is unnecessary for a reply.",
+      "Workspace records are retained while needed to provide the enabled features and maintain their history, unless you request deletion or a security or legal obligation requires retention. A fixed automatic expiry for all workspace history is not currently implemented. Temporary publishing links expire separately. Backup copies follow the hosting provider's backup lifecycle and may not disappear immediately when a live record is deleted.",
+      "To request access, correction or deletion, email ayushsony126@gmail.com from the email registered to your Growthboard account. For deletion, use the subject Growthboard data deletion and identify your workspace. We verify ownership, stop the affected automations, remove the applicable stored credentials and workspace data, and confirm the outcome. Tell us whether you are deleting a whole workspace or asking about a recipient's data; other users' access and records may need to be considered. Removing app access in Meta alone does not delete all Growthboard records.",
+      "We use encrypted provider credentials, server-side authorisation and database access controls. These measures reduce risk; no service can guarantee absolute security. Providers may process information in locations outside your country. Changes to data handling will be reflected on this page. Contact ayushsony126@gmail.com before using the service if you need clarification.",
+      "WhatsApp messaging charges are paid to Meta by the business that owns the connected account. Growthboard does not hold a WhatsApp messaging wallet or provide a guaranteed cash signup grant. Software access, when charged, is separate from Meta's message charges."
+    ]
+  },
+  "terms": {
+    "title": "Terms of service",
+    "body": [
+      "Growthboard is an AS Techzone product. This private-testing service helps authorised businesses manage Instagram content and WhatsApp conversations, enabled automations and consent-based template campaigns. Contact ayushsony126@gmail.com for support.",
+      "You remain responsible for account ownership, content rights, recipient consent, and compliance with Meta's terms and applicable requirements. Review the exact content before publishing and enable automation only for replies you authorise. Do not use the service for unlawful, deceptive, unsolicited or rights-infringing activity.",
+      "Features remain subject to provider permissions, review, account eligibility, quotas and service availability. Private-pilot features may change. Meta messaging payments belong to your Meta business account; any Growthboard software subscription is separate."
+    ]
+  },
+  "support": {
+    "title": "Support",
+    "body": [
+      "For Growthboard support, email ayushsony126@gmail.com. Include your registered account email, workspace name, the affected feature, approximate time and any error reference.",
+      "Never send passwords, access tokens, Meta app secrets or payment card details. To request deletion, email from your registered address with the subject Growthboard data deletion."
+    ]
+  },
+  "data-deletion": {
+    "title": "Data deletion",
+    "body": [
+      "Email ayushsony126@gmail.com from your registered Growthboard account email with the subject Growthboard data deletion. Identify the workspace and whether you want to delete your account, workspace records or a specific recipient's data. Do not include access tokens or passwords.",
+      "We verify ownership before acting. For a verified workspace deletion, we stop its pending automations and remove the applicable stored credentials and workspace data, then confirm the outcome. Some security or legally required records and provider backups may have a different retention lifecycle; we will explain any applicable exception.",
+      "You can disconnect Instagram in Settings or WhatsApp in Connection & billing to remove stored authorisation and stop pending work for that channel. Disconnecting does not delete every historical record. It does not delete your Meta account or its billing balance. A self-service full deletion screen is not yet available."
+    ]
+  }
+}
