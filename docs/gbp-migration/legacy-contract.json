@@ -1,0 +1,893 @@
+{
+  "source_repository": "Ayush0226/gbp-auto-master-backend",
+  "source_commit": "98c890f",
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource",
+      "handler": "oauth_protected_resource_metadata",
+      "source": "main.py",
+      "line": 108,
+      "arguments": {}
+    },
+    {
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/mcp",
+      "handler": "oauth_protected_resource_metadata",
+      "source": "main.py",
+      "line": 108,
+      "arguments": {}
+    },
+    {
+      "method": "GET",
+      "path": "/.well-known/openai-apps-challenge",
+      "handler": "openai_apps_challenge",
+      "source": "main.py",
+      "line": 114,
+      "arguments": {}
+    },
+    {
+      "method": "GET",
+      "path": "/accounts",
+      "handler": "list_accounts",
+      "source": "platform_api.py",
+      "line": 185,
+      "arguments": {
+        "request": "Request"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/calendar",
+      "handler": "admin_get_calendar",
+      "source": "main.py",
+      "line": 341,
+      "arguments": {
+        "req": "AdminUserRequest"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/operations",
+      "handler": "operations",
+      "source": "ops_api.py",
+      "line": 47,
+      "arguments": {
+        "request": "Request"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/run-competitor-scan",
+      "handler": "run_competitor_scan",
+      "source": "main.py",
+      "line": 355,
+      "arguments": {
+        "req": "AdminAuthRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/users",
+      "handler": "get_all_users",
+      "source": "main.py",
+      "line": 308,
+      "arguments": {
+        "req": "AdminAuthRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai/chat",
+      "handler": "chat_with_assistant",
+      "source": "main.py",
+      "line": 577,
+      "arguments": {
+        "req": "ChatContextRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai/generate-report",
+      "handler": "generate_report",
+      "source": "main.py",
+      "line": 606,
+      "arguments": {
+        "req": "ReportContextRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/refresh-google-token",
+      "handler": "api_refresh_google_token",
+      "source": "main.py",
+      "line": 1155,
+      "arguments": {
+        "req": "RefreshTokenRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/billing/cancel",
+      "handler": "cancel_subscription",
+      "source": "main.py",
+      "line": 224,
+      "arguments": {
+        "req": "CancelSubscriptionRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/billing/redeem-access-code",
+      "handler": "redeem_access_code",
+      "source": "main.py",
+      "line": 215,
+      "arguments": {
+        "req": "AccessCodeRequest",
+        "request": "Request"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/calendar/delete",
+      "handler": "delete_calendar_post",
+      "source": "main.py",
+      "line": 1650,
+      "arguments": {
+        "req": "CalendarPostRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/calendar/publish",
+      "handler": "publish_calendar_endpoint",
+      "source": "main.py",
+      "line": 1657,
+      "arguments": {
+        "req": "CalendarPostRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/calendar/schedule",
+      "handler": "schedule_calendar_post",
+      "source": "main.py",
+      "line": 1638,
+      "arguments": {
+        "req": "SchedulePostRequest"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/cron/daily-backlog-reviews",
+      "handler": "daily_backlog_reviews",
+      "source": "main.py",
+      "line": 1212,
+      "arguments": {}
+    },
+    {
+      "method": "GET",
+      "path": "/api/cron/monitor",
+      "handler": "monitor",
+      "source": "ops_api.py",
+      "line": 52,
+      "arguments": {
+        "request": "Request"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/cron/publish-scheduled",
+      "handler": "publish_scheduled_posts",
+      "source": "main.py",
+      "line": 1184,
+      "arguments": {}
+    },
+    {
+      "method": "GET",
+      "path": "/api/cron/reply-reviews",
+      "handler": "cron_reply_reviews",
+      "source": "main.py",
+      "line": 530,
+      "arguments": {}
+    },
+    {
+      "method": "GET",
+      "path": "/api/cron/scrub-calendar",
+      "handler": "scrub_calendar_images",
+      "source": "main.py",
+      "line": 1082,
+      "arguments": {}
+    },
+    {
+      "method": "POST",
+      "path": "/api/google/analytics",
+      "handler": "get_google_analytics",
+      "source": "main.py",
+      "line": 1000,
+      "arguments": {
+        "req": "GoogleReviewRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/google/competitors",
+      "handler": "get_competitors",
+      "source": "main.py",
+      "line": 1362,
+      "arguments": {
+        "req": "CompetitorRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/google/delete-reply",
+      "handler": "delete_review_reply",
+      "source": "main.py",
+      "line": 907,
+      "arguments": {
+        "req": "DeleteReplyRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/google/draft-reviews",
+      "handler": "draft_google_reviews",
+      "source": "main.py",
+      "line": 790,
+      "arguments": {
+        "req": "GoogleReviewRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/google/get-reviews",
+      "handler": "get_google_reviews",
+      "source": "main.py",
+      "line": 687,
+      "arguments": {
+        "req": "GoogleReviewRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/google/locations",
+      "handler": "get_google_locations",
+      "source": "main.py",
+      "line": 634,
+      "arguments": {
+        "req": "GoogleSyncRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/google/post-reply",
+      "handler": "post_review_reply",
+      "source": "main.py",
+      "line": 884,
+      "arguments": {
+        "req": "PostReplyRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/google/publish-post",
+      "handler": "publish_immediate_post",
+      "source": "main.py",
+      "line": 1900,
+      "arguments": {
+        "req": "PublishPostRequest",
+        "request": "Request"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/google/register-webhook",
+      "handler": "register_google_webhook",
+      "source": "main.py",
+      "line": 754,
+      "arguments": {
+        "req": "GoogleReviewRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/google/run-demo",
+      "handler": "run_google_demo",
+      "source": "main.py",
+      "line": 740,
+      "arguments": {
+        "req": "GoogleReviewRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/google/search-keywords",
+      "handler": "get_google_search_keywords",
+      "source": "main.py",
+      "line": 1039,
+      "arguments": {
+        "req": "GoogleReviewRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/google/sync-reviews",
+      "handler": "sync_and_reply_reviews",
+      "source": "main.py",
+      "line": 745,
+      "arguments": {
+        "req": "GoogleReviewRequest"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "handler": "health_check",
+      "source": "main.py",
+      "line": 238,
+      "arguments": {}
+    },
+    {
+      "method": "POST",
+      "path": "/api/payment/create-order",
+      "handler": "payment_checkout_paused",
+      "source": "main.py",
+      "line": 206,
+      "arguments": {}
+    },
+    {
+      "method": "GET",
+      "path": "/api/payment/key",
+      "handler": "payment_key_unavailable",
+      "source": "main.py",
+      "line": 234,
+      "arguments": {}
+    },
+    {
+      "method": "POST",
+      "path": "/api/payment/verify",
+      "handler": "payment_checkout_paused",
+      "source": "main.py",
+      "line": 206,
+      "arguments": {}
+    },
+    {
+      "method": "POST",
+      "path": "/api/rank/generate-report",
+      "handler": "generate_rank_report",
+      "source": "main.py",
+      "line": 1531,
+      "arguments": {
+        "req": "RankReportRequest"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/rank/report.pdf",
+      "handler": "download_rank_report_pdf",
+      "source": "main.py",
+      "line": 122,
+      "arguments": {
+        "token": "str"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/ready",
+      "handler": "readiness_check",
+      "source": "main.py",
+      "line": 243,
+      "arguments": {}
+    },
+    {
+      "method": "POST",
+      "path": "/api/reviews/batch-reply",
+      "handler": "batch_reply_reviews",
+      "source": "main.py",
+      "line": 1450,
+      "arguments": {
+        "req": "BatchReplyRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/reviews/regenerate-reply",
+      "handler": "regenerate_reply",
+      "source": "main.py",
+      "line": 1523,
+      "arguments": {
+        "req": "RegenerateReplyRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/user/get-ai-settings",
+      "handler": "get_ai_settings",
+      "source": "main.py",
+      "line": 266,
+      "arguments": {
+        "req": "GetAISettingsRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/user/onboarding",
+      "handler": "save_onboarding",
+      "source": "main.py",
+      "line": 1425,
+      "arguments": {
+        "req": "OnboardingRequest",
+        "request": "Request"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/user/profile",
+      "handler": "get_user_profile",
+      "source": "main.py",
+      "line": 1411,
+      "arguments": {
+        "req": "UserProfileRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/user/reset-onboarding",
+      "handler": "reset_onboarding",
+      "source": "main.py",
+      "line": 1420,
+      "arguments": {
+        "req": "UserProfileRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/user/save-ai-settings",
+      "handler": "save_ai_settings",
+      "source": "main.py",
+      "line": 289,
+      "arguments": {
+        "req": "SaveAISettingsRequest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/webhooks/google-reviews",
+      "handler": "google_reviews_webhook",
+      "source": "main.py",
+      "line": 1233,
+      "arguments": {
+        "req": "Request"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/audit",
+      "handler": "list_audit_events",
+      "source": "platform_api.py",
+      "line": 402,
+      "arguments": {
+        "request": "Request",
+        "limit": "int"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/automation-rules",
+      "handler": "list_automation_rules",
+      "source": "platform_api.py",
+      "line": 214,
+      "arguments": {
+        "request": "Request"
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/automation-rules",
+      "handler": "upsert_automation_rule",
+      "source": "platform_api.py",
+      "line": 221,
+      "arguments": {
+        "payload": "AutomationRuleInput",
+        "request": "Request"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/campaigns",
+      "handler": "list_campaigns",
+      "source": "platform_api.py",
+      "line": 243,
+      "arguments": {
+        "request": "Request",
+        "status": "str | None",
+        "from_time": "datetime | None",
+        "to_time": "datetime | None",
+        "limit": "int"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/campaigns",
+      "handler": "create_campaign",
+      "source": "platform_api.py",
+      "line": 270,
+      "arguments": {
+        "payload": "CampaignInput",
+        "request": "Request"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/campaigns/{campaign_id}/cancel",
+      "handler": "cancel_campaign",
+      "source": "platform_api.py",
+      "line": 297,
+      "arguments": {
+        "campaign_id": "UUID",
+        "request": "Request"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/campaigns/{campaign_id}/schedule",
+      "handler": "schedule_campaign",
+      "source": "platform_api.py",
+      "line": 290,
+      "arguments": {
+        "campaign_id": "UUID",
+        "payload": "CampaignScheduleInput",
+        "request": "Request"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/generate",
+      "handler": "generate",
+      "source": "image_api.py",
+      "line": 203,
+      "arguments": {
+        "payload": "GenerateImage",
+        "request": "Request"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/google",
+      "handler": "save_google_grant",
+      "source": "connection_api.py",
+      "line": 15,
+      "arguments": {
+        "payload": "GoogleGrant",
+        "request": "Request"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/legacy-posts/attention",
+      "handler": "legacy_posts_attention",
+      "source": "platform_api.py",
+      "line": 409,
+      "arguments": {
+        "request": "Request"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/media",
+      "handler": "list_media",
+      "source": "platform_api.py",
+      "line": 373,
+      "arguments": {
+        "request": "Request",
+        "limit": "int"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/media",
+      "handler": "register_media",
+      "source": "platform_api.py",
+      "line": 380,
+      "arguments": {
+        "payload": "MediaAssetInput",
+        "request": "Request"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/overview",
+      "handler": "account_overview",
+      "source": "platform_api.py",
+      "line": 153,
+      "arguments": {
+        "request": "Request"
+      }
+    },
+    {
+      "method": "DELETE",
+      "path": "/pollinations",
+      "handler": "disconnect",
+      "source": "image_api.py",
+      "line": 95,
+      "arguments": {
+        "request": "Request"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/pollinations/callback",
+      "handler": "callback",
+      "source": "image_api.py",
+      "line": 68,
+      "arguments": {
+        "payload": "OAuthCode",
+        "request": "Request"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/pollinations/connect",
+      "handler": "connect",
+      "source": "image_api.py",
+      "line": 44,
+      "arguments": {
+        "request": "Request"
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/preferences",
+      "handler": "update_preferences",
+      "source": "platform_api.py",
+      "line": 200,
+      "arguments": {
+        "payload": "PreferencesUpdate",
+        "request": "Request"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/providers",
+      "handler": "providers",
+      "source": "image_api.py",
+      "line": 39,
+      "arguments": {
+        "request": "Request"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/review-jobs",
+      "handler": "list_review_jobs",
+      "source": "platform_api.py",
+      "line": 304,
+      "arguments": {
+        "request": "Request",
+        "status": "str | None",
+        "limit": "int"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/review-jobs/{job_id}/approve",
+      "handler": "approve_review_job",
+      "source": "platform_api.py",
+      "line": 318,
+      "arguments": {
+        "job_id": "UUID",
+        "payload": "ReviewJobApprovalInput",
+        "request": "Request"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/review-jobs/{job_id}/cancel",
+      "handler": "cancel_review_job",
+      "source": "platform_api.py",
+      "line": 347,
+      "arguments": {
+        "job_id": "UUID",
+        "request": "Request"
+      }
+    }
+  ],
+  "models": {
+    "main.py:OnboardingRequest": {
+      "user_id": "str | None",
+      "reply_length": "str",
+      "seo_keywords": "list[str]",
+      "full_name": "str"
+    },
+    "main.py:BatchReplyRequest": {
+      "user_id": "str",
+      "location_id": "str",
+      "account_id": "str",
+      "access_token": "str",
+      "count": "int"
+    },
+    "main.py:RegenerateReplyRequest": {
+      "user_id": "str",
+      "review_name": "str",
+      "review_text": "str",
+      "star_rating": "str",
+      "location_id": "str",
+      "access_token": "str"
+    },
+    "main.py:RankReportRequest": {
+      "user_id": "str",
+      "keyword": "str",
+      "location_id": "str",
+      "request_id": "str"
+    },
+    "main.py:UserProfileRequest": {
+      "user_id": "str",
+      "location_id": "str | None"
+    },
+    "main.py:AccessCodeRequest": {
+      "code": "str"
+    },
+    "main.py:CancelSubscriptionRequest": {
+      "user_id": "str",
+      "location_id": "str | None"
+    },
+    "main.py:SaveAISettingsRequest": {
+      "user_id": "str",
+      "location_id": "str",
+      "settings": "dict"
+    },
+    "main.py:GetAISettingsRequest": {
+      "user_id": "str",
+      "location_id": "str"
+    },
+    "main.py:AdminAuthRequest": {
+      "admin_email": "str"
+    },
+    "main.py:AdminUserRequest": {
+      "admin_email": "str",
+      "target_user_id": "str"
+    },
+    "main.py:GoogleSyncRequest": {
+      "user_id": "str",
+      "provider_token": "str"
+    },
+    "main.py:ChatMessage": {
+      "role": "str",
+      "content": "str"
+    },
+    "main.py:ChatContextRequest": {
+      "user_id": "str",
+      "message": "str",
+      "history": "List[ChatMessage]",
+      "context_dump": "str"
+    },
+    "main.py:ReportContextRequest": {
+      "user_id": "str",
+      "context_dump": "str"
+    },
+    "main.py:GoogleReviewRequest": {
+      "user_id": "str",
+      "provider_token": "str",
+      "location_id": "str",
+      "page_token": "str | None"
+    },
+    "main.py:PostReplyRequest": {
+      "provider_token": "str",
+      "review_id": "str",
+      "reply_text": "str"
+    },
+    "main.py:DeleteReplyRequest": {
+      "provider_token": "str",
+      "review_id": "str"
+    },
+    "main.py:PublishPostRequest": {
+      "provider_token": "str",
+      "location_id": "str",
+      "summary": "str",
+      "image_url": "str",
+      "post_type": "str",
+      "request_id": "str | None"
+    },
+    "main.py:RefreshTokenRequest": {
+      "user_id": "str"
+    },
+    "main.py:CompetitorRequest": {
+      "user_id": "str",
+      "location_name": "str",
+      "keyword": "str"
+    },
+    "main.py:SchedulePostRequest": {
+      "user_id": "str",
+      "location_id": "str",
+      "post_date": "date",
+      "caption": "str",
+      "image_url": "str | None",
+      "post_type": "str"
+    },
+    "main.py:CalendarPostRequest": {
+      "user_id": "str",
+      "location_id": "str",
+      "post_id": "str",
+      "provider_token": "str | None"
+    },
+    "platform_api.py:PreferencesUpdate": {
+      "timezone": "str",
+      "locale": "str",
+      "default_account_id": "str | None",
+      "default_location_id": "str | None"
+    },
+    "platform_api.py:AutomationRuleInput": {
+      "location_id": "str | None",
+      "name": "str",
+      "enabled": "bool",
+      "mode": "Literal['draft', 'approval', 'auto_publish']",
+      "min_rating": "int",
+      "max_rating": "int",
+      "tone": "str",
+      "language": "str",
+      "custom_instructions": "str",
+      "delay_minutes": "int",
+      "daily_limit": "int",
+      "blocked_terms": "list[str]"
+    },
+    "platform_api.py:CampaignInput": {
+      "title": "str",
+      "topic_type": "Literal['STANDARD', 'EVENT', 'OFFER']",
+      "summary": "str",
+      "timezone": "str",
+      "location_ids": "list[str]",
+      "call_to_action": "dict[str, Any] | None",
+      "event_details": "dict[str, Any] | None",
+      "offer_details": "dict[str, Any] | None",
+      "media_asset_id": "UUID | None"
+    },
+    "platform_api.py:CampaignScheduleInput": {
+      "publish_at": "datetime"
+    },
+    "platform_api.py:MediaAssetInput": {
+      "object_path": "str",
+      "public_url": "HttpUrl | None",
+      "media_kind": "Literal['photo', 'video']",
+      "mime_type": "str",
+      "byte_size": "int | None",
+      "width": "int | None",
+      "height": "int | None",
+      "duration_seconds": "float | None"
+    },
+    "platform_api.py:ReviewJobApprovalInput": {
+      "publish_at": "datetime | None"
+    },
+    "connection_api.py:GoogleGrant": {
+      "refresh_token": "str"
+    },
+    "image_api.py:OAuthCode": {
+      "code": "str",
+      "state": "str"
+    },
+    "image_api.py:GenerateImage": {
+      "request_id": "UUID",
+      "prompt": "str",
+      "provider": "str"
+    }
+  },
+  "source_sha256": {
+    "ai_text.py": "f483e8d122c4a3b9880fbf014d2635ac00e0a709e360190be5a9c746111e1a17",
+    "api_errors.py": "5e6a931bc0789c4c11c8801dc156628723b8331d840d72f18c5e5ec3950c5512",
+    "billing.py": "0214d2e35b2a5d15b46d6707fe530e45b55bf1568555bf7be647b78a6c44b9c0",
+    "connection_api.py": "c92b6d024151e588e62eb597dfb5db5cba24eb0b8c10aea8fb0ddf6e7aaad5f4",
+    "credential_store.py": "e6c8c27be94defee8648777d2b5dfccd7950d76ec4b5f7814c2a1b5b69783cc7",
+    "entitlements.py": "b1c131b358714a6dc01577c167f510e2b78284a438f25cfe772914a9b84bab81",
+    "http_client.py": "7f2ee442d6a6c919a80f2c26cc9e30aad11ed57ca62cd915889e43eb18eaf1e1",
+    "image_api.py": "10bd3bbf785fcc2c0aa040c83c94ffdb052f34e2e5c84e4c00013fdba0d1344e",
+    "job_control.py": "770c5357fcf36cc755b1d9103948c723647d831313d68c7fc06e06e6b618236f",
+    "main.py": "51508a436135b88a38c656513a7b45bd6c6c8924b5a635a3bc924a7cec4fb5a2",
+    "mcp_auth.py": "e33ca6d37fe0088acc0da08790debc33458c799628f588fddaefba0898d8aa7c",
+    "mcp_server.py": "9d83736f33503b1403c05dc5a2abff04e1c0c5a2ff21905905269aac77d83008",
+    "ops_api.py": "b4808e916145418cbc65e0308f490ec36364ea9e013fe111745f7bd4b5d89809",
+    "platform_api.py": "ad4fc1911d443cee7bd11dd91c4f0ea05a5b6d45ffcc3627483211a4f54ccd46",
+    "rank_service.py": "7f5e4aab477f1896ded6e1f9a0d454cb46b1f429a51c132cbcb7acadf2cb860d",
+    "report_cache.py": "acf3ccc58bdba81b9a8540e0c02974bdfea72e17438355252443e8e45705ba41",
+    "security.py": "5e2d19e72e3dadab7e5a2ab104ffee4906b84e76ad42eb28d1a32451d015f0e6"
+  }
+}

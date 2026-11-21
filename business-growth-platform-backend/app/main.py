@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from contextlib import asynccontextmanager, suppress
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 
 import httpx
 from fastapi import FastAPI
@@ -18,6 +18,7 @@ from app.routes import (
     chatbot,
     content,
     engagement,
+    google,
     instagram,
     whatsapp,
     workspaces,
@@ -25,6 +26,7 @@ from app.routes import (
 from app.upload_limits import MediaUploadLimit
 from app.whatsapp import WhatsAppAPIError, WhatsAppDeliveryUncertain
 from app.worker import worker_loop
+from app.gbp.jobs import worker_loop as google_worker_loop
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -39,17 +41,25 @@ async def lifespan(application: FastAPI):
     )
     application.state.instagram_http = instagram_http
     task = asyncio.create_task(worker_loop(config)) if config.scheduler_enabled else None
+    google_task = asyncio.create_task(google_worker_loop(config)) if config.google_enabled and config.google_worker_enabled else None
     try:
-        yield
+        async with AsyncExitStack() as stack:
+            if google_mcp_server:
+                await stack.enter_async_context(google_mcp_server.session_manager.run())
+            yield
     finally:
         if task:
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
+        if google_task:
+            google_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await google_task
         await instagram_http.aclose()
 
 
-app = FastAPI(title="Growthboard API", version="0.7.0", lifespan=lifespan)
+app = FastAPI(title="Growthboard API", version="0.8.0", lifespan=lifespan)
 settings = get_settings()
 app.add_middleware(MediaUploadLimit)
 app.add_middleware(
@@ -68,6 +78,17 @@ app.include_router(chatbot.router)
 app.include_router(access.router)
 app.include_router(calendar.router)
 app.include_router(whatsapp.router)
+app.include_router(google.router)
+
+
+from app.gbp.provider import GoogleError
+
+
+@app.exception_handler(GoogleError)
+async def google_error(_request, error):
+    return JSONResponse(status_code=409 if error.status in {401, 403} else 502,
+        content={"detail": "Google delivery is unconfirmed. Inspect history before retrying." if error.uncertain
+                 else "Google could not complete this request. Check the connected account and permissions."})
 
 
 @app.exception_handler(WhatsAppAPIError)
@@ -144,3 +165,11 @@ def readiness():
         return JSONResponse(
             status_code=503, content={"status": "not_ready", "version": app.version}
         )
+
+
+# Mount last so MCP cannot intercept existing HTTP routes. Off until OAuth linking is verified.
+google_mcp_server = None
+if settings.google_enabled and settings.google_mcp_enabled:
+    from app.gbp.mcp import create_server
+    google_mcp_server, google_mcp_app = create_server(settings)
+    app.mount("/", google_mcp_app)

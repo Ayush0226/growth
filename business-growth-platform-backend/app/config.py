@@ -48,6 +48,19 @@ class Settings(BaseSettings):
     whatsapp_app_secret: str | None = None
     whatsapp_signup_config_id: str | None = None
     whatsapp_webhook_verify_token: str | None = None
+    google_enabled: bool = False
+    google_client_id: str | None = None
+    google_client_secret: SecretStr | None = None
+    google_redirect_uri: HttpUrl | None = None
+    google_frontend_url: HttpUrl = "https://growboard.in"
+    google_worker_enabled: bool = False
+    google_mcp_enabled: bool = False
+    google_mcp_resource_url: HttpUrl = "https://business-growth-platform-api.onrender.com/mcp"
+    google_pubsub_audience: str | None = None
+    google_pubsub_service_account: str | None = None
+    serpapi_key: SecretStr | None = None
+    cloudflare_account_id: str | None = None
+    cloudflare_api_token: SecretStr | None = None
 
 
 @lru_cache

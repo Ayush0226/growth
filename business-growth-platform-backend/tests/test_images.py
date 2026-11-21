@@ -38,6 +38,7 @@ def test_transparent_pixels_become_white():
         original(size=(400, 1000)),
         b"x" * (MAX_SOURCE_BYTES + 1),
     ],
+    ids=["invalid-image", "too-small", "invalid-aspect-ratio", "too-many-bytes"],
 )
 def test_invalid_or_out_of_bounds_original_is_rejected(content):
     with pytest.raises(HTTPException) as error:
