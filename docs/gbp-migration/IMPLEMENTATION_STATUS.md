@@ -1,8 +1,8 @@
 # GBP integration status
 
-The live website release is 31f7ceb. The Google integration below is a local implementation pending final verification and live setup; do not call this a completed migration.
+The Google module release is 39c5897, live on Growboard's Render frontend and backend. Connection setup is enabled; automatic delivery and MCP are disabled. The migration is not complete: real Google consent, end-to-end checks, remaining compatibility adapters and selected historical data import are outstanding.
 
-## Implemented locally
+## Implemented and deployed
 
 - Captured 69 legacy HTTP endpoint contracts, 32 request models and source hashes in legacy-contract.json. This inventory is not a claim that all 69 paths are compatible.
 - Dedicated workspace-scoped Google module; existing Meta routes remain in place.
@@ -22,7 +22,7 @@ The live website release is 31f7ceb. The Google integration below is a local imp
 2. Review per-endpoint compatibility gaps against legacy-contract.json. User/admin/billing/onboarding settings, exact legacy calendar formats, account-default rules, batch workflows, Pollinations linking and MCP output schemas still require explicit parity decisions/adapters; these must not be presented as fully migrated. Retired credits and payments must remain retired.
 3. Applied additive migration 20261121192057_growboard_google_workspace to Growboard project vcbpmtfarhhdjrnuwlts. All 12 new tables have RLS enabled and no anon/authenticated read grants. Existing GBP project jphuhxzhnqmhgnneaqmo stays untouched.
 4. Created separate Growboard Web OAuth client in approved Google Cloud project steady-ether-500708-n8 (Google Busniess), after explicit user confirmation. Callback: https://business-growth-platform-api.onrender.com/api/integrations/google/callback. Existing Review AI web App client/callback unchanged. No refresh tokens transferred. Audience is External / In production; branding verified; business.manage is registered as non-sensitive.
-5. Added GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI and GOOGLE_FRONTEND_URL=https://growboard.in to the Growboard backend using merge-only Render updates. GOOGLE_ENABLED=false, GOOGLE_WORKER_ENABLED=false and GOOGLE_MCP_ENABLED=false. Existing TOKEN_ENCRYPTION_KEY preserved. Credential copy encrypted with Windows DPAPI outside the repository; temporary plaintext removed.
+5. Added GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI and GOOGLE_FRONTEND_URL=https://growboard.in to the Growboard backend using merge-only Render updates. Deployed first with all Google flags off, verified API health/readiness/CORS and authentication, then requested GOOGLE_ENABLED=true. GOOGLE_WORKER_ENABLED=false and GOOGLE_MCP_ENABLED=false. Existing TOKEN_ENCRYPTION_KEY preserved. Credential copy encrypted with Windows DPAPI outside the repository; temporary plaintext removed.
 6. Connect a real workspace, sync one location, verify review reads, then one designated manual reply/post. No customer review or post has been sent in this task.
 7. Inspect the existing account-level notification topic before adding a subscriber. Do not overwrite GBP notification settings. Configure OIDC audience/service-account checks before accepting events.
 8. Confirm one active automatic reply product for the test location; enable/test automatic delivery and pause/restart/duplicate/uncertain cases before expanding.
@@ -35,7 +35,7 @@ Encrypted Windows-DPAPI snapshot saved under output/gbp-migration; 34 public tab
 
 ## Access blocker
 
-Google Cloud project is identified and accessible. Supabase Auth dashboard setup still needs sign-in. A real Google workspace connection/consent remains a user action after deploying and enabling the connection module; automated delivery remains paused. No existing Google client, customer grant, IAM role or GBP notification topic was changed.
+Google Cloud project is identified and accessible. User requested help signing into Growboard and Supabase. Verified the owner's existing Growboard email account and prepared its login form; no password was read, entered or changed. Supabase Auth dashboard setup still needs sign-in. A real Google workspace connection/consent remains a user action; automated delivery remains paused. No existing Google client, customer grant, IAM role or GBP notification topic was changed.
 
 ## Latest verification checkpoint
 
@@ -43,4 +43,4 @@ Google Cloud project is identified and accessible. Supabase Auth dashboard setup
 - Frontend build including Google workspace, campaigns/media and OAuth consent: passed.
 - SQL sandbox test: ownership, one-use state, quotas, duplicate claims, pause/disconnect, atomic campaign target validation, campaign cancellation and backend-only grants passed.
 - MCP 2 uses snake_case model fields; tool metadata and its contract tests were corrected and verified in the isolated environment. The system MCP remains compatible with the existing openai-agents installation.
-- New schema and credentials are prepared in production. Google connection, worker and MCP flags remain OFF; integration source is still local pending deployment. No review reply, business post, account grant or history/token import has occurred.
+- New schema and credentials are prepared in production. Integration source 39c5897 is live on both Render services. API reports version 0.8.0; health/readiness and Growboard CORS return 200; unauthenticated Google and Instagram routes return 401. Google connection enablement update accepted; worker and MCP flags remain OFF. No review reply, business post, account grant or history/token import has occurred.
