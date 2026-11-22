@@ -1,87 +1,109 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import FogTransition from './FogTransition'
-import './growboard.css'
-import './growboard-neon.css'
+import GrowboardLogo from './GrowboardLogo'
+import './growboard-cinema.css'
 
-const channels = [
-  { name: 'Google', tag: 'Make every review a conversation.', headline: 'Get seen.\nStay brilliant.', description: 'Bring your local presence into focus. Reviews, thoughtful replies and regular business updates, connected to the rest of your business.', symbol: 'G', status: 'Google integration in preparation', item: 'A little recognition goes a long way.', label: 'Review reply preview', reply: 'Thank you for sharing your experience. We’re glad you enjoyed your visit and look forward to welcoming you again.', color: 'blue' },
-  { name: 'Instagram', tag: 'Turn attention into a conversation.', headline: 'Stand out.\nSpark more.', description: 'Plan your next post, keep your inbox moving and turn the right comment into a helpful private conversation.', symbol: '◎', status: 'Available in the connected pilot', item: 'Your next conversation starts here.', label: 'Comment-to-DM preview', reply: 'Thanks for your interest! Here’s the guide you asked for. Reply here if you have a question.', color: 'violet' },
-  { name: 'WhatsApp', tag: 'Keep the conversation going.', headline: 'Less waiting.\nMore wow.', description: 'A familiar place for customer questions, useful follow-ups and a real person whenever the conversation needs one.', symbol: '◉', status: 'Built · live activation pending', item: 'A warm welcome. Without the wait.', label: 'Customer reply preview', reply: 'Hello! Thanks for reaching out. Tell us what you’re looking for and we’ll help you find the right option.', color: 'green' },
+const clamp = (n: number) => Math.min(1, Math.max(0, n))
+// Supply an original same-origin film or HTTPS CDN URL when ready.
+const heroFilm = import.meta.env.VITE_GROWBOARD_HERO_VIDEO as string | undefined
+const stories = [
+  { id: 'google', name: 'Google Business Profile', short: 'Be the local favourite.', title: ['BIG ON', 'YOUR BLOCK.'], copy: 'Turn a search nearby into a reason to choose you. Give your reviews, business updates and local visibility a place to come together.', tags: ['Reviews & replies', 'Business updates', 'Local rankings'], to: '/google', action: 'Explore Google tools', status: 'Connected Google tools · live ranking checks require setup' },
+  { id: 'instagram', name: 'Instagram', short: 'Make attention mean something.', title: ['STOP THE', 'SCROLL.'], copy: 'Make the post. Plan the moment. Keep the conversation going. Bring your content, comments and DMs into the same creative rhythm.', tags: ['Content calendar', 'Comment-to-DM', 'Business AI'], to: '/settings/connections', action: 'Explore Instagram', status: 'Available for connected pilot accounts' },
+  { id: 'whatsapp', name: 'WhatsApp', short: 'A little closer to your customers.', title: ['LESS WAIT.', 'MORE HELLO.'], copy: 'Be there when the conversation starts. Organise questions, prepare useful replies and bring a real person in when it matters.', tags: ['Shared inbox', 'Reply rules', 'Human handover'], to: '/whatsapp', action: 'Explore WhatsApp', status: 'Provider activation required before messaging' },
 ]
 
+function ChannelCard({ channel }: { channel: string }) {
+  if (channel === 'google') return <div className="gb-product-card gb-google-card"><div className="gb-demo-bar"><span className="gb-channel-symbol">G</span><b>Your neighbourhood, connected.</b><span>DEMO</span></div><div className="gb-map"><div className="gb-map-road road-a"/><div className="gb-map-road road-b"/><div className="gb-map-road road-c"/><span className="gb-map-block block-a"/><span className="gb-map-block block-b"/><span className="gb-map-pin"><GrowboardLogo wordmark={false}/></span><span className="gb-map-place">YOUR BUSINESS</span></div><div className="gb-review"><span className="gb-stars">★★★★★</span><h3>“My new favourite spot.”</h3><p>A great experience deserves a thoughtful reply.</p><div className="gb-reply-demo"><GrowboardLogo wordmark={false}/><p>Thanks for making us part of your day.<br/>We’d love to see you again.</p></div></div><div className="gb-card-foot">Reviews. Replies. Real connections.<span>✦</span></div></div>
+  if (channel === 'instagram') return <div className="gb-product-card gb-instagram-card"><div className="gb-demo-bar"><span className="gb-channel-symbol">◎</span><b>A post with somewhere to go.</b><span>DEMO</span></div><div className="gb-poster"><span>THE EVERYDAY STUDIO</span><strong>MAKE<br/>A LITTLE<br/><i>NOISE.</i></strong><div className="gb-poster-orb"/><span className="gb-poster-stamp">MADE TO<br/>STAND OUT</span></div><div className="gb-dm-comment"><span className="gb-person">S</span><p><b>Someone new</b><br/>GUIDE! I’d love to know more.</p><span>♡</span></div><div className="gb-dm-response"><span>COMMENT → CONVERSATION</span><p>Here’s the guide you asked for.<br/>Let’s make something happen.</p></div></div>
+  return <div className="gb-product-card gb-whatsapp-card"><div className="gb-demo-bar"><span className="gb-channel-symbol">◉</span><b>A warmer welcome.</b><span>DEMO</span></div><div className="gb-chat-title"><span className="gb-person">Y</span><div><b>Your business</b><small>A conversation, with care.</small></div><span>•••</span></div><div className="gb-chat"><span className="gb-chat-day">A LITTLE HELLO</span><p className="gb-bubble incoming">Hey! Can you help me find<br/>the right one?<small>10:24</small></p><p className="gb-bubble outgoing">Of course. Tell us what you<br/>have in mind — we’re all ears.<small>10:24 · ✓✓</small></p><div className="gb-handover"><span>✳</span><p>People first.<br/><b>Bring your team in anytime.</b></p></div></div><div className="gb-chat-input">Make every hello count.<span>♡</span></div></div>
+}
+
 export default function GrowboardHome() {
-  const [selected, setSelected] = useState(0)
-  const [sequence, setSequence] = useState(0)
+  const root = useRef<HTMLDivElement>(null)
+  const video = useRef<HTMLVideoElement>(null)
   const [menu, setMenu] = useState(false)
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const channel = channels[selected]
-  useEffect(() => () => clearTimeout(timer.current), [])
+  const [filmFailed, setFilmFailed] = useState(false)
+  const [still, setStill] = useState(() => {
+    try { return localStorage.getItem('growboard.motion') === 'off' || window.matchMedia('(prefers-reduced-motion: reduce)').matches } catch { return true }
+  })
   useEffect(() => {
-    function escape(event: KeyboardEvent) { if (event.key === 'Escape') setMenu(false) }
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const change = () => { if (media.matches) setStill(true) }
+    media.addEventListener('change', change)
+    return () => media.removeEventListener('change', change)
+  }, [])
+  useEffect(() => {
+    const escape = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(false) }
     window.addEventListener('keydown', escape)
     return () => window.removeEventListener('keydown', escape)
   }, [])
-  function switchChannel(index: number) {
-    clearTimeout(timer.current)
-    setSequence(value => value + 1)
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) setSelected(index)
-    else timer.current = setTimeout(() => setSelected(index), 430)
+  useEffect(() => {
+    const el = root.current
+    if (!el) return
+    const scenes = Array.from(el.querySelectorAll<HTMLElement>('.gb-scene'))
+    const hero = el.querySelector<HTMLElement>('.gb-cinema')!
+    let frame = 0
+    const draw = () => {
+      frame = 0
+      const mobile = window.innerWidth <= 800
+      const height = window.innerHeight
+      const bounds = hero.getBoundingClientRect()
+      const progress = clamp(-bounds.top / Math.max(1, bounds.height - height))
+      hero.style.setProperty('--film-progress', String(still ? 0 : progress))
+      const film = video.current
+      if (film && !still && Number.isFinite(film.duration) && !film.seeking) {
+        const target = progress * Math.max(0, film.duration - .08)
+        if (Math.abs(film.currentTime - target) > .06) film.currentTime = target
+      }
+      for (const scene of scenes) {
+        const rect = scene.getBoundingClientRect()
+        const p = (height - rect.top) / (rect.height + height)
+        const enter = clamp((p - .13) / .20)
+        const leave = clamp((p - .68) / .22)
+        const presence = still ? 1 : mobile ? clamp((height - rect.top - 120) / (height * .6)) : enter * (1 - leave)
+        scene.style.setProperty('--presence', String(presence))
+        scene.style.setProperty('--travel', String(1 - presence))
+        scene.style.setProperty('--copy-visible', String(still || mobile || (enter > .94 && leave < .12) ? 1 : 0))
+      }
+    }
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(draw) }
+    draw()
+    window.addEventListener('scroll', schedule, { passive: true })
+    window.addEventListener('resize', schedule)
+    const film = video.current
+    film?.addEventListener('loadedmetadata', schedule)
+    film?.addEventListener('seeked', schedule)
+    return () => { cancelAnimationFrame(frame); window.removeEventListener('scroll', schedule); window.removeEventListener('resize', schedule); film?.removeEventListener('loadedmetadata', schedule); film?.removeEventListener('seeked', schedule) }
+  }, [still, filmFailed])
+  function toggleMotion() {
+    const next = !still
+    setStill(next)
+    try { localStorage.setItem('growboard.motion', next ? 'off' : 'on') } catch { /* Optional preference. */ }
+    window.dispatchEvent(new Event('growboard-motion-change'))
   }
-  return <div className={`grow-site grow-${channel.color}`}>
-    <a className="grow-skip" href="#grow-main">Skip to content</a>
-    <nav className="grow-nav" aria-label="Main navigation">
-      <Link to="/" className="grow-wordmark"><span className="grow-mark" aria-hidden="true">g</span>growboard<span className="grow-wordmark-dot">.</span></Link>
-      <button className="grow-menu-button" aria-expanded={menu} aria-controls="grow-menu" onClick={() => setMenu(!menu)}>{menu ? 'Close' : 'Menu'}</button>
-      <div id="grow-menu" className={`grow-nav-links ${menu ? 'is-open' : ''}`}>
-        <a href="#platform" onClick={() => setMenu(false)}>The platform</a><a href="#how-it-works" onClick={() => setMenu(false)}>How it works</a><a href="#questions" onClick={() => setMenu(false)}>Good to know</a>
-        <Link to="/login" className="grow-login">Log in</Link><Link to="/access" className="grow-nav-cta">Open workspace</Link>
-      </div>
-    </nav>
-    <main id="grow-main">
-      <section className="grow-hero" aria-labelledby="grow-headline">
-        <div className="grow-sky" aria-hidden="true"><div className="grow-orbit orbit-one"/><div className="grow-orbit orbit-two"/><div className="grow-cloud cloud-one"/><div className="grow-cloud cloud-two"/></div>
-        <FogTransition sequence={sequence}/>
-        <div className="grow-hero-top"><span>YOUR NEXT BIG MOVE</span><span>BY AS TECHZONE</span></div>
-        <div className="grow-hero-grid">
-          <div className="grow-hero-copy">
-            <p className="grow-eyebrow">{channel.tag}</p>
-            <h1 id="grow-headline">{channel.headline.split('\n').map((line, i) => <span key={i}>{line}</span>)}</h1>
-            <p className="grow-intro">{channel.description}</p>
-            <div className="grow-actions"><Link className="grow-button grow-button-dark" to="/access">Start your next chapter</Link><a className="grow-text-link" href="#platform">Explore the platform</a></div>
-            <p className="grow-pilot">A growing workspace for independent businesses.</p>
-          </div>
-          <div className="grow-preview" aria-label={`${channel.name} illustrative preview`}>
-            <div className="grow-floating-label"><span className="grow-spark">✦</span> Big energy. Less busywork.</div>
-            <div className="grow-preview-card">
-              <div className="grow-preview-header"><span className="grow-channel-icon">{channel.symbol}</span><div><b>{channel.name}</b><span>{channel.label}</span></div><span className="grow-demo-label">DEMO</span></div>
-              <div className="grow-preview-content"><span className="grow-stars" aria-label="Illustrative five-star review">{selected === 0 ? '★★★★★' : '✦'}</span><h2>{channel.item}</h2><p>{selected === 0 ? '“Such a lovely experience. Friendly people and thoughtful service.”' : selected === 1 ? '“GUIDE — I’d love to know more.”' : '“Hi! Can you help me choose?”'}</p></div>
-              <div className="grow-reply"><div><span className="grow-avatar">g</span><b>{selected === 0 ? 'Your business' : 'Your assistant'}</b></div><p>{channel.reply}</p><small>Illustrative content · no message is sent</small></div>
-              <div className="grow-preview-footer"><span>{channel.status}</span><span aria-hidden="true">✧</span></div>
-            </div>
-            <div className="grow-floating-note"><span aria-hidden="true">☁</span><div>Less busywork.<br/><b>More your business.</b></div></div>
-          </div>
-        </div>
-        <div className="grow-hero-bottom"><span>ONE VISION. THREE CONNECTIONS.</span><div className="grow-channel-tabs" role="group" aria-label="Explore a channel">{channels.map((item, i) => <button key={item.name} aria-pressed={selected === i} onClick={() => switchChannel(i)}><span aria-hidden="true">{item.symbol}</span>{item.name}</button>)}</div><button className="grow-fog-replay" onClick={() => setSequence(value => value + 1)}>Replay the fog</button></div>
-      </section>
-      <section id="platform" className="grow-platform">
-        <div className="grow-section-heading"><p className="grow-eyebrow">MAKE SPACE FOR WHAT MATTERS</p><h2>Three channels.<br/><em>One bold vision.</em></h2><p>Your presence, your content and your conversations belong together. We’re bringing them into one considered workspace.</p></div>
-        <div className="grow-features">
-          <article><span className="grow-feature-icon">G</span><p className="grow-feature-state">JOINING GROWBOARD</p><h3>A stronger local presence.</h3><p>Bring GBP Master’s reviews, reply automation, multi-location publishing and rank reports into your new workspace.</p><a href="https://gbpautomaster.in" target="_blank" rel="noreferrer">Use the existing GBP platform</a></article>
-          <article><span className="grow-feature-icon">◎</span><p className="grow-feature-state">CONNECTED PILOT</p><h3>Content with a conversation.</h3><p>Prepare photos and carousels, plan your calendar, manage comments and respond with keyword or business AI rules.</p><Link to="/composer">Open Instagram tools</Link></article>
-          <article><span className="grow-feature-icon">◉</span><p className="grow-feature-state">ACTIVATION IN PROGRESS</p><h3>A more helpful hello.</h3><p>An inbox, contacts, approved templates and customer support flows. Human takeover stays close at hand.</p><Link to="/whatsapp">Open WhatsApp setup</Link></article>
-        </div>
-      </section>
-      <section id="how-it-works" className="grow-flow"><div><p className="grow-eyebrow">AUTOMATION, WITH YOUR INTENT</p><h2>You set the tone.<br/>Let the work flow.</h2><p>Choose your channels, define what a helpful response looks like and decide which tasks can run automatically.</p><Link to="/assistant" className="grow-button grow-button-light">Explore Business AI</Link></div><ol><li><span>Connect your business</span><p>Sign in to your own workspace and authorize the channels you manage.</p></li><li><span>Make it sound like you</span><p>Add business facts, set your tone and review your automation rules.</p></li><li><span>Let the right tasks run</span><p>Enable a rule once. Eligible conversations follow that rule, with activity history and a pause control.</p></li></ol></section>
-      <section className="grow-calendar-story"><div className="grow-calendar-visual" aria-label="Illustrative shared calendar concept"><div><b>A little perspective.</b><span>CALENDAR CONCEPT</span></div><div className="grow-calendar-grid">{Array.from({length:14},(_,i)=><div key={i}><span>{i+1}</span>{i===2&&<b className="cal-blue">Google update</b>}{i===5&&<b className="cal-purple">Instagram post</b>}{i===9&&<b className="cal-green">WhatsApp follow-up</b>}</div>)}</div><small>Shared cross-channel scheduling is planned. Existing channel tools remain available.</small></div><div><p className="grow-eyebrow">THE BIGGER PICTURE</p><h2>A clearer view<br/>of your day.</h2><p>Our direction is a shared calendar for content, conversations and activity across your business. A place to see what happened and decide what happens next.</p><Link to="/calendar" className="grow-text-link">Explore the current calendar</Link></div></section>
-      <section id="questions" className="grow-faq"><div><p className="grow-eyebrow">GOOD TO KNOW</p><h2>A few clear answers.</h2></div><div>
-        <details><summary>Can I keep using GBP AutoMaster?</summary><p>Yes. GBP AutoMaster remains a separate operational product. Growboard’s Google module is being prepared on Growboard’s own infrastructure.</p></details>
-        <details><summary>Will every review need my approval?</summary><p>The planned Google auto-reply mode lets you enable a rule once and publish eligible replies automatically. You choose the rating range, tone and limits, and can pause the rule. It will only become available after the integration and live tests are complete.</p></details>
-        <details><summary>Is everything shown already available?</summary><p>Instagram tools are available for the connected pilot. WhatsApp is built but still needs activation and provider approval. Google integration and the shared calendar are in preparation. The previews on this page use fictional content.</p></details>
-        <details><summary>Are Meta messaging charges included?</summary><p>WhatsApp messaging charges are paid directly to Meta by the connected business. Growboard’s software pricing is separate and will be confirmed before paid onboarding.</p></details>
+  return <div ref={root} className={`gb-site ${still ? 'gb-still' : ''}`}>
+    <a className="gb-skip" href="#gb-main">Skip to content</a>
+    <header className="gb-nav"><Link to="/" aria-label="Growboard home"><GrowboardLogo/></Link><button className="gb-menu" onClick={() => setMenu(!menu)} aria-expanded={menu} aria-controls="gb-nav-links">{menu ? 'Close' : 'Menu'}</button><nav id="gb-nav-links" className={menu ? 'is-open' : ''} aria-label="Website navigation"><a href="#platform" onClick={() => setMenu(false)}>The platform</a><a href="#your-rhythm" onClick={() => setMenu(false)}>Your rhythm</a><a href="#questions" onClick={() => setMenu(false)}>Good to know</a><Link to="/login">Log in</Link><Link to="/access" className="gb-pill gb-pill-lime">Let’s grow</Link></nav></header>
+    <main id="gb-main">
+      <section className="gb-cinema" aria-labelledby="gb-headline"><div className="gb-cinema-sticky">
+        <div className="gb-hero-meta"><span>THE BUSINESS YOU IMAGINE. CLOSER.</span><button className="gb-motion" onClick={toggleMotion} aria-pressed={!still}>Motion {still ? 'off' : 'on'} <span aria-hidden="true">{still ? '○' : '◉'}</span></button></div>
+        {heroFilm && !filmFailed ? <video ref={video} className="gb-hero-film" src={heroFilm} muted playsInline preload="metadata" onError={() => setFilmFailed(true)} aria-label="Growboard opening film, controlled by scrolling"/> : <div className="gb-sculpture" aria-hidden="true"><div className="gb-aura"/><div className="gb-orbital orbit-back"/><div className="gb-monolith"><GrowboardLogo wordmark={false}/></div><div className="gb-orbital orbit-front"/><span className="gb-star star-a">✳</span><span className="gb-star star-b">✦</span><span className="gb-satellite satellite-a">◎</span><span className="gb-satellite satellite-b">G</span><span className="gb-satellite satellite-c">◉</span></div>}
+        <div className="gb-hero-copy"><p className="gb-kicker">A LITTLE LESS BUSYWORK. A LOT MORE YOU.</p><h1 id="gb-headline">GOOD BUSINESS.<br/><span>BIG ENERGY.</span></h1><div className="gb-hero-bottom"><p>Your local presence. Your next post. Your next hello.<br/>Bring it all together. Make it unmistakably yours.</p><Link className="gb-pill gb-pill-white" to="/access">Find your momentum <span aria-hidden="true">✳</span></Link></div></div>
+        <div className="gb-hero-foot"><span>GOOGLE · INSTAGRAM · WHATSAPP</span><a href="#platform">SCROLL TO FIND YOUR FLOW <span aria-hidden="true">↓</span></a><span>BY AS TECHZONE</span></div>
       </div></section>
-      <section className="grow-final"><p className="grow-eyebrow">YOUR NEXT CHAPTER</p><h2>Your business.<br/><em>Turned all the way up.</em></h2><Link className="grow-button grow-button-dark" to="/access">Open your workspace</Link><p>Pilot access requires an invitation code.</p></section>
+      <section className="gb-manifesto" id="platform"><p className="gb-kicker">YOU DIDN’T START A BUSINESS TO JUGGLE TABS.</p><h2>More creating.<br/>More connecting.<br/><span>More <i>you.</i></span></h2><div className="gb-manifesto-bottom"><span className="gb-asterisk" aria-hidden="true">✳</span><p>One place for the things that move your business forward.<br/>Three channels. A whole new rhythm.</p><span className="gb-outline-label">MEET YOUR NEXT CHAPTER</span></div></section>
+      <div className="gb-stories">{stories.map((story, i) => <section className={`gb-scene gb-scene-${story.id} ${i % 2 ? 'gb-reverse' : ''}`} key={story.id} aria-labelledby={`title-${story.id}`}><div className="gb-scene-sticky"><div className="gb-scene-label"><span>{story.name}</span><span>{story.short}</span></div><div className="gb-scene-grid"><div className="gb-scene-visual"><ChannelCard channel={story.id}/><span className="gb-demo-note">Illustrative preview · fictional content</span></div><div className="gb-scene-copy"><p className="gb-kicker">{story.short}</p><h2 id={`title-${story.id}`}>{story.title[0]}<br/><em>{story.title[1]}</em></h2><p>{story.copy}</p><div className="gb-tags">{story.tags.map(tag => <span key={tag}>{tag}</span>)}</div><Link className="gb-pill" to={story.to}>{story.action}</Link><small>{story.status}</small></div></div></div></section>)}</div>
+      <section id="your-rhythm" className="gb-rhythm"><div className="gb-rhythm-head"><p className="gb-kicker">A WORKSPACE. YOUR WAY.</p><h2>YOU CALL<br/>THE <span>SHOTS.</span></h2><p>Set the tone. Choose the rules. Keep the human touch.<br/>Good automation starts with your intent.</p></div><div className="gb-rhythm-grid"><article className="gb-rhythm-connect"><div className="gb-connect-art" aria-hidden="true"><span>G</span><span>◎</span><span>◉</span><GrowboardLogo wordmark={false}/></div><h3>Your world.<br/>Brought together.</h3><p>Connect the accounts you manage to your own workspace.</p></article><article className="gb-rhythm-tone"><span className="gb-tone-quote" aria-hidden="true">“</span><div><p className="gb-kicker">SOUNDS LIKE YOU.</p><h3>Warm?<br/><i>Witty?</i><br/>All business?</h3><p>Your business facts and voice give every rule its direction.</p></div></article><article className="gb-rhythm-control"><div className="gb-rule-art"><span>YOUR RULES</span><b>Helpful by design.</b><div><span>Choose what runs</span><i>✓</i></div><div><span>Review the activity</span><i>✓</i></div><div><span>Pause when you need</span><i>✓</i></div></div><h3>More control.<br/>Less on your plate.</h3><p>Enable the flows you’re ready for. Keep an eye on their activity.</p></article></div></section>
+      <section className="gb-statement"><span>BUILT FOR THE</span><h2>SMALL TEAMS.<br/><i>BIG DREAMS.</i></h2><p>The neighbourhood favourite. The next independent brand.<br/>The business only you could build.</p><span className="gb-statement-flower" aria-hidden="true">✳</span></section>
+      <section className="gb-faq" id="questions"><div><p className="gb-kicker">NO MYSTERY. JUST MOMENTUM.</p><h2>A few<br/><i>good answers.</i></h2></div><div>
+        <details><summary>What can I use today?</summary><p>Connected pilot accounts can use Instagram publishing and conversation tools, plus Google connections, reviews and business tools. Local ranking checks require provider setup. WhatsApp needs provider activation before messages can run. The previews above use fictional content.</p></details>
+        <details><summary>Can I still use GBP AutoMaster?</summary><p>Yes. GBP AutoMaster continues to run separately. Growboard has its own workspace and infrastructure; connecting to Growboard does not move your old history or settings automatically.</p></details>
+        <details><summary>How do automatic replies work?</summary><p>You choose the rules and tone. Eligible conversations can follow enabled rules. Google automatic delivery is currently paused while live testing is completed; connecting Google alone does not start sending replies.</p></details>
+        <details><summary>How do I get access?</summary><p>Create an account, then use your administrator’s invitation code to activate your workspace. Availability depends on the channels and permissions connected to your account.</p></details>
+        <details><summary>What about WhatsApp charges?</summary><p>Meta messaging charges are paid directly by the connected business. Software pricing is separate and will be confirmed before paid onboarding.</p></details>
+      </div></section>
+      <section className="gb-finale"><p className="gb-kicker">MAKE YOUR NEXT MOVE A GOOD ONE.</p><h2>LET’S<br/><span>GROW</span><span className="gb-finale-spark" aria-hidden="true">✳</span><br/>SOMETHING.</h2><div><p>Your business has a story.<br/>Give it room to get bigger.</p><Link className="gb-pill gb-pill-lime" to="/access">Open your workspace</Link><small>Pilot access by invitation.</small></div></section>
     </main>
-    <footer className="grow-footer"><Link to="/" className="grow-wordmark">growboard.</Link><span>Made for the business you’re building.<br/>A product by AS Techzone.</span><div><Link to="/privacy">Privacy</Link><Link to="/terms">Terms</Link><Link to="/support">Support</Link><Link to="/data-deletion">Data deletion</Link></div><small>© {new Date().getFullYear()} AS Techzone</small></footer>
+    <footer className="gb-footer"><Link to="/" aria-label="Growboard home"><GrowboardLogo/></Link><p>Independent spirit.<br/>Connected thinking.</p><nav aria-label="Legal links"><Link to="/privacy">Privacy</Link><Link to="/terms">Terms</Link><Link to="/support">Support</Link><Link to="/data-deletion">Data deletion</Link></nav><small>© {new Date().getFullYear()} AS Techzone</small></footer>
   </div>
 }
