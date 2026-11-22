@@ -1,5 +1,5 @@
 import { FormEvent, createContext, useContext, useEffect, useState } from 'react'
-import { Link, NavLink, Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import { supabase, googleSignInEnabled } from './lib/supabase'
 import AccessPage from './AccessPage'
@@ -15,11 +15,9 @@ import legalContent from './legalContent.json'
 import GrowboardHome from './GrowboardHome'
 import GoogleWorkspace from './GoogleWorkspace'
 import GoogleOAuthConsent from './GoogleOAuthConsent'
+import Shell from './WorkspaceShell'
 import { api, setApiUser, getCached, type CalendarItem, type InstagramConnection, type Insights } from './lib/api'
 
-function Shell({ children }: { children: React.ReactNode }) {
-  return <div className="app-shell"><aside><Link className="brand" to="/dashboard"><span className="brand-mark">G</span><span>Growthboard<small>Business workspace</small></span></Link><nav><NavLink to="/dashboard" aria-label="Overview">⌂ <span>Overview</span></NavLink><NavLink to="/composer" aria-label="Create">＋ <span>Create</span></NavLink><NavLink to="/calendar" aria-label="Calendar">□ <span>Calendar</span></NavLink><NavLink to="/engagement" aria-label="Comments">♡ <span>Comments</span></NavLink><NavLink to="/inbox" aria-label="Messages">✉ <span>Messages</span></NavLink><NavLink to="/automations" aria-label="Automations">⚡ <span>Automations</span></NavLink><NavLink to="/insights" aria-label="Insights">↗ <span>Insights</span></NavLink><NavLink to="/google" aria-label="Google Business Profile">G <span>Google</span></NavLink><NavLink to="/whatsapp" aria-label="WhatsApp">◉ <span>WhatsApp</span></NavLink><NavLink to="/assistant" title="Business AI" aria-label="Business AI">✦ <span>Business AI</span></NavLink></nav><div className="side-bottom"><Link to="/settings/connections">⚙ <span>Settings</span></Link><Link to="/support">? <span>Support</span></Link><button className="text-button" onClick={()=>void supabase.auth.signOut()}>Sign out</button></div></aside><div className="workspace"><header><div><b>Workspace</b><span>Content & engagement control center</span></div><div className="header-actions"><details className="mobile-account-menu"><summary>Account</summary><div><Link to="/settings/connections">Settings &amp; connections</Link><Link to="/support">Support</Link><button onClick={()=>void supabase.auth.signOut()}>Sign out</button></div></details><Link className="button primary compact" to="/composer">＋ New post</Link></div></header><main>{children}</main></div></div>
-}
 
 function Home() {
   return <GrowboardHome />

@@ -1,6 +1,6 @@
 # GBP integration status
 
-The Google module release is 39c5897, live on Growboard's Render frontend and backend. Connection setup is enabled; automatic delivery and MCP are disabled. The migration is not complete: real Google consent, end-to-end checks, remaining compatibility adapters and selected historical data import are outstanding.
+The Google module release is 39c5897, live on Growboard's Render frontend and backend. A real Google connection has completed consent, synced four locations and loaded live reviews. Automatic delivery and MCP remain disabled. The migration is not complete: write-delivery checks, remaining compatibility adapters and selected historical data import are outstanding.
 
 ## Implemented and deployed
 
@@ -35,7 +35,7 @@ Encrypted Windows-DPAPI snapshot saved under output/gbp-migration; 34 public tab
 
 ## Access blocker
 
-Google Cloud project is identified and accessible. User requested help signing into Growboard and Supabase. Verified the owner's existing Growboard email account and prepared its login form; no password was read, entered or changed. Supabase Auth dashboard setup still needs sign-in. A real Google workspace connection/consent remains a user action; automated delivery remains paused. No existing Google client, customer grant, IAM role or GBP notification topic was changed.
+Google Cloud project is identified and accessible. The user signed into Growboard and completed Google consent; one active connection and four active locations verified, with no enabled reply rules or delivery jobs. Supabase Auth dashboard setup still needs sign-in. No password was read, entered or changed. Automated delivery remains paused. No existing Google client, IAM role or GBP notification topic was changed.
 
 ## Latest verification checkpoint
 
@@ -43,4 +43,14 @@ Google Cloud project is identified and accessible. User requested help signing i
 - Frontend build including Google workspace, campaigns/media and OAuth consent: passed.
 - SQL sandbox test: ownership, one-use state, quotas, duplicate claims, pause/disconnect, atomic campaign target validation, campaign cancellation and backend-only grants passed.
 - MCP 2 uses snake_case model fields; tool metadata and its contract tests were corrected and verified in the isolated environment. The system MCP remains compatible with the existing openai-agents installation.
-- New schema and credentials are prepared in production. Integration source 39c5897 is live on both Render services. API reports version 0.8.0; health/readiness and Growboard CORS return 200; unauthenticated Google and Instagram routes return 401. Google connection enablement update accepted; worker and MCP flags remain OFF. No review reply, business post, account grant or history/token import has occurred.
+- New schema and credentials are prepared in production. Integration source 39c5897 is live on both Render services. API reports version 0.8.0; health/readiness and Growboard CORS return 200; unauthenticated Google and Instagram routes return 401. Google connection enablement update accepted; worker and MCP flags remain OFF. No review reply, business post or history/token import has occurred.
+
+## Navigation and rankings update — November 22, 2026
+
+- Replaced the flat sidebar with Overview, Channels, Content, Inbox, Automations and Reports; only one section expands at a time, with remembered selection, deep links, an accessible mobile drawer and Business AI in the header. Existing routes preserved.
+- Local rankings: save up to 10 unique keywords per connected location; order determines priority. Up/down controls, sequential checks, stop-after-current, saved results, measurement area/time and a top-10 business table replace raw JSON. Priority does not alter Google ranking. Missing results are not fabricated.
+- Preserved the legacy single-keyword endpoint and top-11 compatibility fields, while adding top-10 fields. Place ID matching prevents a same-name branch being misidentified as the connected business.
+- Added backend-only gbp_rank_keyword_sets in migration 20261122073705_growboard_rank_keyword_priorities. RLS enabled; anon/authenticated have no direct grants. Database checks verified priority persistence, 10-keyword cap and grants.
+- Backend: 175 tests passed. Frontend build passed. Browser fixture checks verified 10 rows, 10-keyword limit, reordering/saving, one expanded section, desktop layout and mobile drawer/overflow correction. Fixture data is local QA only and excluded from deployment.
+- User will add SERPAPI_KEY in the Growboard Render backend. No key found in local project/reference configurations; never replace measured ranking with generated data. Live provider checks remain dependent on that credential.
+- Security advisor found the expected informational no-policy notices on backend-only tables. Existing project-wide warnings concern older SECURITY DEFINER RPC grants and password protection, outside this navigation/ranking change; see https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable and https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection.

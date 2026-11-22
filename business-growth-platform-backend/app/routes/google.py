@@ -67,9 +67,11 @@ async def status(user: CurrentUser = Depends(current_user), settings: Settings =
     setup = bool(settings.google_client_id and settings.google_client_secret and settings.google_redirect_uri)
     if not settings.google_enabled:
         return {"enabled": False, "setup_ready": setup, "connected": False, "worker_enabled": False,
+                "rank_provider_ready": bool(settings.serpapi_key),
                 "message": "Google integration is being prepared. Existing GBP AutoMaster remains available."}
     rows = await service.execute(db().table("gbp_connections").select("email,status,connected_at").eq("workspace_id", ws).limit(1))
     return {"enabled": True, "setup_ready": setup, "worker_enabled": settings.google_worker_enabled,
+            "rank_provider_ready": bool(settings.serpapi_key),
             "connected": bool(rows and rows[0]["status"] == "active"), "connection": rows[0] if rows else None}
 
 
@@ -523,9 +525,68 @@ async def keywords(payload: LocationInput, user: CurrentUser = Depends(current_u
     return {"status": "success", "keywords": rows, "truncated": bool(token)}
 
 
+class RankKeywordsInput(LocationInput):
+    keywords: list[str] = Field(max_length=10)
+
+    @field_validator("keywords")
+    @classmethod
+    def unique_keywords(cls, values: list[str]) -> list[str]:
+        normalized = [" ".join(value.split()) for value in values]
+        if any(not value or len(value) > 120 for value in normalized):
+            raise ValueError("Each keyword must contain 1 to 120 characters.")
+        if len({value.casefold() for value in normalized}) != len(normalized):
+            raise ValueError("Each keyword must be unique.")
+        return normalized
+
+
+async def rank_keyword_state(ws: str, location: str, keywords: list[str]):
+    rows = await service.execute(db().table("gbp_rank_reports").select("id,keyword,report,status,created_at")
+        .eq("workspace_id", ws).eq("location_name", location).in_("keyword", keywords)
+        .order("created_at", desc=True).limit(200)) if keywords else []
+    latest, completed = {}, {}
+    for row in rows:
+        latest.setdefault(row["keyword"], row)
+        if row["status"] == "completed":
+            completed.setdefault(row["keyword"], row)
+    reports = []
+    for keyword in keywords:
+        if keyword not in latest:
+            continue
+        row = completed.get(keyword, latest[keyword])
+        reports.append({**(row.get("report") or {}), "id": row["id"], "keyword": keyword,
+                        "status": row["status"], "created_at": row["created_at"],
+                        "latest_attempt_status": latest[keyword]["status"]})
+    return {"keywords": keywords, "reports": reports}
+
+
+@router.get("/api/gbp/rank-keywords")
+async def get_rank_keywords(location_name: str, user: CurrentUser = Depends(current_user), settings: Settings = Depends(get_settings)):
+    ws, location = await context(LocationInput(location_name=location_name), user, settings)
+    rows = await service.execute(db().table("gbp_rank_keyword_sets").select("keywords")
+                                .eq("workspace_id", ws).eq("location_name", location["name"]).limit(1))
+    return await rank_keyword_state(ws, location["name"], rows[0]["keywords"] if rows else [])
+
+
+@router.put("/api/gbp/rank-keywords")
+async def save_rank_keywords(payload: RankKeywordsInput, user: CurrentUser = Depends(current_user), settings: Settings = Depends(get_settings)):
+    ws, location = await context(payload, user, settings, owner=True)
+    await service.execute(db().table("gbp_rank_keyword_sets").upsert({"workspace_id": ws,
+        "location_name": location["name"], "keywords": payload.keywords, "updated_at": service.now()},
+        on_conflict="location_name"))
+    return await rank_keyword_state(ws, location["name"], payload.keywords)
+
+
 class RankInput(LocationInput):
     keyword: str = Field(min_length=1, max_length=120)
     request_id: UUID
+
+    @field_validator("keyword")
+    @classmethod
+    def clean_keyword(cls, value: str) -> str:
+        value = " ".join(value.split())
+        if not value:
+            raise ValueError("A keyword is required.")
+        return value
 
 
 @router.post("/api/rank/generate-report")

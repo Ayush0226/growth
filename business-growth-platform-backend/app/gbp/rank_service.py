@@ -8,6 +8,7 @@ import hmac
 import json
 import time
 import zlib
+from datetime import UTC, datetime
 from typing import Any, Callable
 
 from app.gbp.http_client import requests
@@ -89,10 +90,14 @@ def run_local_rank_scan(
         position = item.get("position")
         position = int(position) if isinstance(position, (int, float)) else index
         place_id = str(item.get("place_id") or item.get("data_id") or "")
-        is_target = bool(
-            (target_place_id and place_id == target_place_id)
-            or (target_name and _normalized_name(item.get("title")) == target_name)
-        )
+        # A same-name branch is not the connected business. Prefer Google's
+        # authoritative place ID; never override a different ID with a name match.
+        provider_place_id = str(item.get("place_id") or "")
+        is_target = bool(target_place_id and provider_place_id == target_place_id)
+        if not target_place_id:
+            street = _normalized_name(" ".join((business.get("storefrontAddress") or {}).get("addressLines") or []))
+            is_target = bool(target_name and _normalized_name(item.get("title")) == target_name
+                             and street and street in _normalized_name(item.get("address")))
         if is_target and actual_rank is None:
             actual_rank = position
         results.append(
@@ -114,6 +119,9 @@ def run_local_rank_scan(
         "target_business": business_title,
         "actual_rank": actual_rank,
         "found_in_top_11": actual_rank is not None and actual_rank <= 11,
+        "found_in_top_10": actual_rank is not None and actual_rank <= 10,
+        "top_10_results": [item for item in results if 1 <= item["position"] <= 10][:10],
+        "checked_at": datetime.now(UTC).isoformat(),
         "results": results,
     }
 
@@ -162,17 +170,18 @@ def _pdf_escape(value: Any) -> str:
 
 
 def render_rank_report_pdf(report: dict[str, Any]) -> bytes:
-    rank = f"#{report.get('actual_rank')}" if report.get("found_in_top_11") else "Not found in top 11"
+    limit = 10 if "top_10_results" in report else 11
+    rank = f"#{report.get('actual_rank')}" if report.get("actual_rank") and report["actual_rank"] <= limit else f"Not found in top {limit}"
     lines = [
-        "GBP Auto Master - Google Local Rank Report",
+        "Growboard - Google Local Rank Report",
         f"Keyword: {report.get('keyword')}",
         f"Business: {report.get('target_business')}",
         f"Search area: {report.get('search_area')}",
         f"Measured rank: {rank}",
         "",
-        "Top 11 Google local results",
+        f"Top {limit} Google local results",
     ]
-    for item in report.get("results") or []:
+    for item in report.get("top_10_results", report.get("results")) or []:
         marker = " [YOUR BUSINESS]" if item.get("is_target") else ""
         lines.append(
             f"#{item.get('position')} {item.get('business_name')}{marker} | "

@@ -28,6 +28,9 @@ def test_rank_scan_returns_measured_position_and_only_top_11():
     assert report['actual_rank'] == 7
     assert report['found_in_top_11'] is True
     assert len(report['results']) == 11
+    assert len(report['top_10_results']) == 10
+    assert report['found_in_top_10'] is True
+    assert report['checked_at']
 
 
 def test_rank_scan_does_not_invent_rank_when_target_is_absent():
@@ -41,6 +44,22 @@ def test_rank_scan_does_not_invent_rank_when_target_is_absent():
     )
     assert report['actual_rank'] is None
     assert report['found_in_top_11'] is False
+
+
+def test_same_name_branch_with_different_place_id_is_not_marked_as_yours():
+    calls = iter([
+        response({'title': 'Same Cafe', 'storefrontAddress': {'locality': 'Pune'}, 'metadata': {'placeId':'target'}}),
+        response({'local_results': [
+            {'position':1, 'title':'Same Cafe', 'place_id':'different'},
+            {'position':11, 'title':'Same Cafe', 'place_id':'target'},
+        ]}),
+    ])
+    report=run_local_rank_scan(location_id='locations/123', keyword='cafe', google_access_token='token',
+        serpapi_key='key', http_get=lambda *a,**k:next(calls))
+    assert report['actual_rank']==11
+    assert report['found_in_top_10'] is False
+    assert report['top_10_results'][0]['is_target'] is False
+    assert all(row['position']<=10 for row in report['top_10_results'])
 
 
 def test_rank_report_pdf_token_round_trip_and_pdf_render():
