@@ -47,6 +47,7 @@ Google Cloud project is identified and accessible. The user signed into Growboar
 
 ## Navigation and rankings update — November 22, 2026
 
+- Release cf33957 deployed successfully to both Render services. Production readiness returns 200; GET/PUT rank-keyword routes are present and the authenticated page loads the connected locations and empty saved keyword state without errors. Live search checks are disabled because the backend reports the search credential is not configured yet.
 - Replaced the flat sidebar with Overview, Channels, Content, Inbox, Automations and Reports; only one section expands at a time, with remembered selection, deep links, an accessible mobile drawer and Business AI in the header. Existing routes preserved.
 - Local rankings: save up to 10 unique keywords per connected location; order determines priority. Up/down controls, sequential checks, stop-after-current, saved results, measurement area/time and a top-10 business table replace raw JSON. Priority does not alter Google ranking. Missing results are not fabricated.
 - Preserved the legacy single-keyword endpoint and top-11 compatibility fields, while adding top-10 fields. Place ID matching prevents a same-name branch being misidentified as the connected business.
