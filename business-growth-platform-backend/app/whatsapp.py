@@ -73,8 +73,8 @@ def parse_events(payload: dict) -> list[dict]:
                 from app.whatsapp_coexistence import normalize
 
                 rows = normalize(account, phone, field, value)
-                for start in range(0, len(rows), 250):
-                    batch = rows[start : start + 250]
+                for start in range(0, len(rows), 50):
+                    batch = rows[start : start + 50]
                     events.append(
                         {
                             "kind": "coexistence_batch",

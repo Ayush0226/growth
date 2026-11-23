@@ -1,5 +1,6 @@
 """Workspace-isolated WhatsApp inbox, campaigns and durable delivery processing."""
 
+import asyncio
 import hashlib
 import json
 import re
@@ -286,10 +287,14 @@ def apply_receipt(conn: dict, item: dict) -> bool:
     return True
 
 
-def process_coexistence(conn: dict, items: list[dict]):
+def process_coexistence(conn: dict, items: list[dict], event_id: str | None = None):
     messages = []
     progress_events = []
-    for event in items:
+    for index, event in enumerate(items):
+        if event_id and index % 10 == 0:
+            db().table("whatsapp_events").update({"claimed_at": now_iso()}).eq("id", event_id).eq(
+                "status", "processing"
+            ).execute()
         kind = event["kind"]
         if kind == "sync_warning":
             db().table("whatsapp_connections").update({"sync_warning": event["detail"]}).eq(
@@ -415,7 +420,7 @@ async def process_event(record: dict, settings: Settings):
         if conn.get("connection_mode") != "coexistence":
             finish_event(record["id"], "ignored", "Not a Business app connection")
             return
-        process_coexistence(conn, event["items"])
+        await asyncio.to_thread(process_coexistence, conn, event["items"], record["id"])
         finish_event(record["id"], "processed")
         return
     if event["kind"] == "delivery":
