@@ -52,7 +52,41 @@ def parse_events(payload: dict) -> list[dict]:
             continue
         for change in object_rows(entry.get("changes")):
             value = object_value(change.get("value"))
+            field = change.get("field")
+            if field == "account_update" and value.get("event") in {
+                "PARTNER_REMOVED",
+                "ACCOUNT_OFFBOARDED",
+            }:
+                events.append(
+                    {
+                        "kind": "offboarded",
+                        "account_id": account,
+                        "phone_number_id": None,
+                        "event_key": hashlib.sha256(
+                            json.dumps([account, value, entry.get("time")], sort_keys=True).encode()
+                        ).hexdigest(),
+                    }
+                )
+                continue
             phone = str(object_value(value.get("metadata")).get("phone_number_id") or "")
+            if field in {"history", "smb_app_state_sync", "smb_message_echoes"} and phone.isdigit():
+                from app.whatsapp_coexistence import normalize
+
+                rows = normalize(account, phone, field, value)
+                for start in range(0, len(rows), 250):
+                    batch = rows[start : start + 250]
+                    events.append(
+                        {
+                            "kind": "coexistence_batch",
+                            "account_id": account,
+                            "phone_number_id": phone,
+                            "items": batch,
+                            "event_key": hashlib.sha256(
+                                json.dumps(batch, sort_keys=True).encode()
+                            ).hexdigest(),
+                        }
+                    )
+                continue
             if (
                 change.get("field") != "messages"
                 or value.get("messaging_product") != "whatsapp"
@@ -244,6 +278,29 @@ class WhatsAppClient:
             raise WhatsAppAPIError("Meta did not return connection authorization.")
         return token
 
+    async def coexistence_phone(self, waba: str, phone: str | None, token: str) -> str:
+        phones = await self.rows(
+            f"{waba}/phone_numbers", token, fields="id,is_on_biz_app,platform_type"
+        )
+        matches = [
+            p
+            for p in phones
+            if p.get("is_on_biz_app") is True and (not phone or str(p.get("id")) == phone)
+        ]
+        if len(matches) != 1:
+            raise WhatsAppAPIError("Select one eligible WhatsApp Business app number in Meta.")
+        return str(matches[0]["id"])
+
+    async def sync_app_data(self, phone: str, token: str, sync_type: str) -> dict:
+        if sync_type not in {"history", "smb_app_state_sync"}:
+            raise ValueError("Invalid synchronization type")
+        return await self._request(
+            "POST",
+            f"{phone}/smb_app_data",
+            token,
+            json={"messaging_product": "whatsapp", "sync_type": sync_type},
+        )
+
     async def templates(self, waba: str, token: str) -> list[dict]:
         if not waba.isdigit():
             raise ValueError("Invalid WhatsApp account ID")
@@ -333,7 +390,7 @@ class WhatsAppClient:
 
 
 def decode_verified_webhook(body: bytes, signature: str, app_secret: str) -> list[dict]:
-    if len(body) > 1024 * 1024:
+    if len(body) > 16 * 1024 * 1024:
         raise ValueError("WhatsApp webhook exceeds the intake limit")
     if not valid_webhook_signature(body, signature, app_secret):
         raise ValueError("Invalid WhatsApp webhook signature")

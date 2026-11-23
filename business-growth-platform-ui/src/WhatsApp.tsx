@@ -67,9 +67,14 @@ function Overview({status, navigate}: {status: WAStatus; navigate: (tab: Tab) =>
 }
 
 function Connection({status, reload}: {status: WAStatus; reload: () => Promise<void>}) {
+  useEffect(() => {
+    if (status.connection?.connection_mode !== 'coexistence') return
+    const timer = setInterval(() => { void reload() }, 5000)
+    return () => clearInterval(timer)
+  }, [reload, status.connection?.connection_mode])
   const [state, setState] = useState(''); const [notice, setNotice] = useState(''); const [busy, setBusy] = useState(false)
   const [disconnect, setDisconnect] = useState(false)
-  const [newNumber, setNewNumber] = useState(false); const [pin, setPin] = useState('')
+  const [mode, setMode] = useState<'coexistence' | 'new_number' | 'existing_api'>(status.connection?.connection_mode || 'coexistence'); const newNumber = mode === 'new_number'; const [pin, setPin] = useState('')
   useEffect(() => {
     let active = true
     if (status.signup_ready) Promise.all([loadMetaSDK(status), waSend<{state: string}>('/signup/start')]).then(([,value]) => { if (active) setState(value.state) }).catch(e => { if (active) setNotice(errorText(e)) })
@@ -77,13 +82,16 @@ function Connection({status, reload}: {status: WAStatus; reload: () => Promise<v
   }, [status.app_id, status.config_id, status.graph_version, status.signup_ready]) // eslint-disable-line react-hooks/exhaustive-deps -- SDK configuration only; polling must not restart authorization.
   async function connect() {
     setBusy(true); setNotice('')
-    try { await connectMeta(status, state, newNumber ? pin : undefined); setPin(''); setState(''); await reload(); setNotice('Meta authorization saved. Send a message from another phone to verify incoming delivery. Automations start paused.') }
+    try { await connectMeta(status, state, newNumber ? pin : undefined, mode); setPin(''); setState(''); await reload(); setNotice('Meta authorization saved. Send a message from another phone to verify incoming delivery. Automations start paused.') }
     catch (e) { setNotice(errorText(e)); const next = await waSend<{state: string}>('/signup/start').catch(() => null); if (next) setState(next.state) }
     finally { setBusy(false) }
   }
   async function billing(acknowledged: boolean) { setBusy(true); try { await waSend('/billing', {acknowledged}); await reload(); setNotice('Billing acknowledgement saved. Meta manages payment status and charges.') } catch (e) { setNotice(errorText(e)) } finally { setBusy(false) } }
-  return <><Notice text={notice}/><div className="grid"><article className="card"><span className="wa-icon" aria-hidden="true">W</span><h2>{status.connected ? 'Your WhatsApp connection' : 'Connect WhatsApp'}</h2><p>{status.connection?.verified_name} {status.connection?.display_phone_number}</p><p className="muted-text">Use your own business account and eligible number. Existing WhatsApp Business app numbers need Meta’s supported coexistence or migration process. Personal chat history is not automatically imported.</p>
-    {!status.connected && <><label className="check-row"><input type="checkbox" checked={newNumber} onChange={e => setNewNumber(e.target.checked)}/><span>I am registering a new API number. Existing Business app users should follow Meta’s supported connection flow instead.</span></label>{newNumber && <label>Choose a six-digit two-step verification PIN<input type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, ''))}/><small>Keep this PIN securely. We use it for registration and do not store it.</small></label>}</>}
+  return <><Notice text={notice}/><div className="grid"><article className="card"><span className="wa-icon" aria-hidden="true">W</span><h2>{status.connected ? 'Your WhatsApp connection' : 'Connect WhatsApp'}</h2><p>{status.connection?.verified_name} {status.connection?.display_phone_number}</p><p className="muted-text">Connect your existing WhatsApp Business app number and keep using it on your phone, subject to Meta eligibility. Regular WhatsApp Messenger numbers cannot use this connection option. Your contacts and permitted text history sync after connection; imported history never triggers automatic replies. Media files are not imported.</p>
+    <label>How do you use this number?<select disabled={busy} value={mode} onChange={e => { setMode(e.target.value as typeof mode); setPin('') }}><option value="coexistence">Already using WhatsApp Business app</option><option value="new_number">New number — not registered on WhatsApp</option><option value="existing_api">Already connected to my Cloud API account</option></select></label>
+    {mode === 'coexistence' && <p className="notice">Keep your WhatsApp Business app open during connection and synchronization. Do not delete its account. Meta may unlink linked devices and change some app features. Provider and account eligibility are checked by Meta. <a href="https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/onboarding-business-app-users" target="_blank" rel="noreferrer">Review Meta’s coexistence requirements ↗</a></p>}
+    {newNumber && <label>Choose a six-digit two-step verification PIN<input type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, ''))}/><small>For a new API number only. Keep this PIN securely; it is not stored.</small></label>}
+    {status.connection?.connection_mode === 'coexistence' && <div role="status"><p>Connected through WhatsApp Business app coexistence.</p><p>Contacts: {status.connection.contacts_sync_status}. History: {status.connection.history_sync_status} · {status.connection.history_sync_progress || 0}% reported by Meta.</p>{status.connection.sync_warning && <p className="notice">{status.connection.sync_warning} Synchronization is partial; contact support.</p>}<p>Requested or receiving means synchronization is still pending. If it needs attention or stays pending, contact support; do not repeatedly reconnect to retry a one-time sync.</p></div>}
     <button className="button primary" disabled={busy || !state || !status.signup_ready || (newNumber && !/^\d{6}$/.test(pin))} onClick={() => void connect()}>{busy ? 'Please wait…' : status.connected ? 'Renew Meta connection' : 'Continue with Meta'}</button>
     {!status.signup_ready && <p>Customer connection is awaiting administrator configuration and Meta approval.</p>}
     {status.connected && <button className="button danger" disabled={busy} onClick={() => setDisconnect(true)}>Disconnect</button>}

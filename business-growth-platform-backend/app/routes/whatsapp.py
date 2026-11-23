@@ -1,5 +1,6 @@
 """Customer-authorized WhatsApp connections, inbox, automations and campaigns."""
 
+import asyncio
 import hmac
 import re
 from datetime import UTC, datetime, timedelta
@@ -140,8 +141,17 @@ class SignupComplete(BaseModel):
     state: str = Field(min_length=20, max_length=200)
     code: SecretStr
     waba_id: str = Field(pattern=r"^\d{1,40}$")
-    phone_number_id: str = Field(pattern=r"^\d{1,40}$")
+    phone_number_id: str | None = Field(default=None, pattern=r"^\d{1,40}$")
+    connection_mode: Literal["new_number", "coexistence", "existing_api"] = "existing_api"
     registration_pin: SecretStr | None = None
+
+    @model_validator(mode="after")
+    def registration_mode(self):
+        if self.connection_mode == "coexistence" and self.registration_pin:
+            raise ValueError("Business app coexistence must not register the number")
+        if self.connection_mode == "new_number" and not self.registration_pin:
+            raise ValueError("New-number registration requires a PIN")
+        return self
 
     @field_validator("registration_pin")
     @classmethod
@@ -151,7 +161,17 @@ class SignupComplete(BaseModel):
         return value
 
 
-async def store_connection(ws, user, waba, phone, token, settings, registration_pin=None):
+async def store_connection(
+    ws, user, waba, phone, token, settings, registration_pin=None, connection_mode="existing_api"
+):
+    if connection_mode == "coexistence":
+        if registration_pin:
+            raise HTTPException(422, "Coexistence must never register or migrate your number.")
+        phone = await WhatsAppClient(settings.meta_graph_api_version).coexistence_phone(
+            waba, phone, token
+        )
+    if not phone:
+        raise HTTPException(422, "Meta did not return a phone number. Start again.")
     prior = one(
         db()
         .table("whatsapp_connections")
@@ -194,6 +214,7 @@ async def store_connection(ws, user, waba, phone, token, settings, registration_
             "status": "active",
             "display_phone_number": details.get("display_phone_number"),
             "verified_name": details.get("verified_name"),
+            "connection_mode": connection_mode,
             "access_token_encrypted": TokenCipher(settings.token_encryption_key).encrypt(token),
             "ai_enabled": False,
             "connected_at": now_iso(),
@@ -208,6 +229,35 @@ async def store_connection(ws, user, waba, phone, token, settings, registration_
     db().table("whatsapp_campaigns").update(
         {"status": "paused", "detail": "Connection renewed; review before resuming."}
     ).eq("connection_id", conn["id"]).in_("status", ["scheduled", "running"]).execute()
+    if connection_mode == "coexistence":
+        for prefix, sync_type in (("contacts", "smb_app_state_sync"), ("history", "history")):
+            # Claim before requesting: one-shot sync must not be blindly retried.
+            claimed = (
+                db()
+                .table("whatsapp_connections")
+                .update({f"{prefix}_sync_status": "requesting"})
+                .eq("id", conn["id"])
+                .eq(f"{prefix}_sync_status", "not_started")
+                .execute()
+                .data
+            )
+            if not claimed:
+                continue
+            try:
+                result = await WhatsAppClient(settings.meta_graph_api_version).sync_app_data(
+                    phone, token, sync_type
+                )
+                db().table("whatsapp_connections").update(
+                    {
+                        f"{prefix}_sync_status": "requested",
+                        f"{prefix}_sync_request_id": str(result.get("request_id", ""))[:200],
+                    }
+                ).eq("id", conn["id"]).eq(f"{prefix}_sync_status", "requesting").execute()
+            except WhatsAppAPIError:
+                db().table("whatsapp_connections").update(
+                    {f"{prefix}_sync_status": "needs_attention"}
+                ).eq("id", conn["id"]).eq(f"{prefix}_sync_status", "requesting").execute()
+        conn = connection(ws)
     return conn
 
 
@@ -245,6 +295,7 @@ async def signup_complete(
         token,
         settings,
         payload.registration_pin,
+        payload.connection_mode,
     )
 
 
@@ -903,7 +954,7 @@ async def webhook(request: Request, settings: Settings = Depends(get_settings)):
     available(settings)
     body = bytearray()
     async for chunk in request.stream():
-        if len(body) + len(chunk) > 1024 * 1024:
+        if len(body) + len(chunk) > 16 * 1024 * 1024:
             raise HTTPException(413, "Event exceeds intake limit")
         body.extend(chunk)
     try:
@@ -914,4 +965,4 @@ async def webhook(request: Request, settings: Settings = Depends(get_settings)):
         )
     except (ValueError, TypeError) as exc:
         raise HTTPException(400, "Invalid signed WhatsApp event") from exc
-    return {"received": ingest(events)}
+    return {"received": await asyncio.to_thread(ingest, events)}

@@ -59,7 +59,7 @@ def test_verified_webhook_normalizes_text_without_triggering_sends():
     with pytest.raises(ValueError, match="signature"):
         decode_verified_webhook(body, bad_signature(signature), "test-secret")
     with pytest.raises(ValueError, match="limit"):
-        decode_verified_webhook(b" " * (1024 * 1024 + 1), signature, "test-secret")
+        decode_verified_webhook(b" " * (16 * 1024 * 1024 + 1), signature, "test-secret")
 
 
 def bad_signature(signature):

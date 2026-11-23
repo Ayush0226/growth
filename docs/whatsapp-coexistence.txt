@@ -1,0 +1,19 @@
+GROWBOARD WHATSAPP BUSINESS APP COEXISTENCE — 23 November 2026
+
+Connection choices:
+- WhatsApp Business app coexistence (default for a new connection).
+- New unregistered API number (six-digit PIN and explicit registration).
+- Existing owned Cloud API account (legacy connection path).
+
+Coexistence requests featureType whatsapp_business_app_onboarding, accepts the FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING result with only waba_id, resolves an unambiguous provider-verified is_on_biz_app phone, and never calls number registration. Own-account permissions and workspace number-lock checks remain enforced.
+
+Connection triggers contacts/history sync once. Requests are claimed before provider calls; uncertain/rejected requests are marked needs_attention and are not blindly retried. Keep the Business app open. The UI displays request state, provider history progress, sharing refusal and partial-sync warnings. Contacts has no completion marker in the provider payload; receiving is not presented as complete.
+
+Webhooks: history, smb_app_state_sync, smb_message_echoes, account_update, plus existing messages. Signed payloads are bounded at 16 MiB. Batches are persisted before the background worker processes them. Imports preserve consent and opt-outs. Historical messages never trigger automation and are excluded from the 24-hour service-window query. Phone-app replies pause automation. Offboarding revokes credentials and pauses rules/campaigns.
+
+Boundaries:
+Only phone-number identities currently work throughout the app. BSUID-only imports are flagged as partial, not silently presented as complete. Media is represented by message type; files are not downloaded. This does not claim full media/archive parity or an end-to-end provider acceptance test. Real business connection still requires Meta Tech Provider/Solution Partner eligibility, relevant access and customer approval. Meta app mode/access requirements can block production webhooks. No business number is connected by deployment.
+
+Validation: full backend suite 184 passed with isolated configuration; focused WhatsApp suite passed after final processing-order change; browser signup callback test covers coexistence missing phone ID, new-number PIN, origin filtering and cancellation. Frontend production build passed. Database migration adds state fields and is_history; existing RLS/service-role-only access retained.
+
+Source: https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/onboarding-business-app-users

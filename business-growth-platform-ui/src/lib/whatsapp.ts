@@ -5,6 +5,8 @@ export type WAConnection = {
   display_phone_number?: string; verified_name?: string; billing_acknowledged: boolean;
   ai_enabled: boolean; business_name: string; knowledge: string; instructions: string;
   handoff_message: string; ai_daily_limit: number; updated_at: string;
+  connection_mode?: 'coexistence' | 'new_number' | 'existing_api'; contacts_sync_status?: string;
+  history_sync_status?: string; history_sync_progress?: number; sync_warning?: string;
 }
 export type WAStatus = {
   enabled: boolean; connected: boolean; setup_ready: boolean; signup_ready: boolean;
@@ -44,18 +46,21 @@ export function loadMetaSDK(status: WAStatus): Promise<void> {
   })
 }
 
-export function connectMeta(status: WAStatus, state: string, registrationPin?: string): Promise<WAConnection> {
+export function connectMeta(status: WAStatus, state: string, registrationPin?: string, mode: 'coexistence' | 'new_number' | 'existing_api' = 'existing_api'): Promise<WAConnection> {
   return new Promise((resolve, reject) => {
-    let assets: {waba_id: string; phone_number_id: string} | undefined
+    let assets: {waba_id: string; phone_number_id?: string} | undefined
     let code: string | undefined
     let completing = false
-    const cleanup = () => { clearTimeout(timer); window.removeEventListener('message', listener) }
-    const fail = (error: Error) => { cleanup(); reject(error) }
+    let settled = false
+    let assetTimer: ReturnType<typeof setTimeout> | undefined
+    const cleanup = () => { clearTimeout(timer); clearTimeout(assetTimer); window.removeEventListener('message', listener) }
+    const fail = (error: Error) => { if (settled) return; settled = true; cleanup(); reject(error) }
     const complete = () => {
-      if (!code || !assets || completing) return
+      if (!code || !assets || completing || settled) return
       completing = true
+      settled = true
       cleanup()
-      waSend<WAConnection>('/signup/complete', {state, code, ...assets, registration_pin: registrationPin || null}).then(resolve).catch(reject)
+      waSend<WAConnection>('/signup/complete', {state, code, ...assets, connection_mode: mode, registration_pin: mode === 'new_number' ? registrationPin || null : null}).then(resolve).catch(reject)
     }
     const listener = (event: MessageEvent) => {
       if (!['https://www.facebook.com', 'https://web.facebook.com'].includes(event.origin)) return
@@ -63,7 +68,9 @@ export function connectMeta(status: WAStatus, state: string, registrationPin?: s
         const item = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
         if (item?.type !== 'WA_EMBEDDED_SIGNUP') return
         if (item.event === 'CANCEL' || item.event === 'ERROR') { fail(new Error('Meta setup was cancelled or could not finish. You can try again.')); return }
-        if (typeof item.data?.waba_id === 'string' && typeof item.data?.phone_number_id === 'string') {
+        if (!['FINISH', 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING'].includes(item.event)) return
+        if (item.event === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING' && mode !== 'coexistence') { fail(new Error('Choose the WhatsApp Business app connection option and start again.')); return }
+        if (typeof item.data?.waba_id === 'string' && (mode === 'coexistence' || typeof item.data?.phone_number_id === 'string')) {
           assets = {waba_id: item.data.waba_id, phone_number_id: item.data.phone_number_id}
           complete()
         }
@@ -77,9 +84,9 @@ export function connectMeta(status: WAStatus, state: string, registrationPin?: s
         code = response.authResponse?.code
         if (!code) { fail(new Error('Connection was not authorized.')); return }
         complete()
-        setTimeout(() => { if (!completing) fail(new Error('Meta did not return a business number. Complete number selection and start again.')) }, 10_000)
+        if (!completing && !settled) assetTimer = setTimeout(() => fail(new Error('Meta did not return a business number. Complete number selection and start again.')), 10_000)
       }, {config_id: status.config_id, response_type: 'code', override_default_response_type: true,
-          extras: {sessionInfoVersion: '3'}})
+          extras: {sessionInfoVersion: '3', ...(mode === 'coexistence' ? {featureType: 'whatsapp_business_app_onboarding', setup: {}} : {})}})
     } catch { fail(new Error('Could not open Meta. Allow popups and try again.')) }
   })
 }

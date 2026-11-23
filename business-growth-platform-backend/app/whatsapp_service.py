@@ -20,7 +20,8 @@ PRICING_URL = "https://whatsappbusiness.com/resources/faq/"
 PUBLIC_CONNECTION = (
     "id,status,waba_id,phone_number_id,display_phone_number,verified_name,connected_at,"
     "billing_acknowledged,ai_enabled,business_name,knowledge,instructions,handoff_message,"
-    "ai_daily_limit,ai_enabled_at,updated_at"
+    "ai_daily_limit,ai_enabled_at,updated_at,connection_mode,contacts_sync_status,"
+    "history_sync_status,history_sync_progress,sync_warning"
 )
 STOP_WORDS = {"stop", "unsubscribe", "cancel", "stop messaging", "बंद करो"}
 
@@ -82,6 +83,7 @@ def service_window(conn: dict, wa_id: str) -> datetime | None:
         .eq("connection_id", conn["id"])
         .eq("contact_wa_id", wa_id)
         .eq("direction", "inbound")
+        .eq("is_history", False)
         .order("occurred_at", desc=True)
         .limit(1)
         .execute()
@@ -181,6 +183,25 @@ def queue_message(conn: dict, wa_id: str, request_id: str, text: str = "", **ext
 def ingest(events: list[dict]) -> int:
     inserted = 0
     for event in events:
+        if event["kind"] == "offboarded":
+            matches = (
+                db()
+                .table("whatsapp_connections")
+                .select("id,workspace_id,phone_number_id")
+                .eq("waba_id", event["account_id"])
+                .eq("status", "active")
+                .execute()
+                .data
+                or []
+            )
+            for match in matches:
+                copied = {
+                    **event,
+                    "kind": "offboarded_number",
+                    "phone_number_id": match["phone_number_id"],
+                }
+                inserted += ingest([copied])
+            continue
         conn = one(
             db()
             .table("whatsapp_connections")
@@ -265,6 +286,88 @@ def apply_receipt(conn: dict, item: dict) -> bool:
     return True
 
 
+def process_coexistence(conn: dict, items: list[dict]):
+    messages = []
+    progress_events = []
+    for event in items:
+        kind = event["kind"]
+        if kind == "sync_warning":
+            db().table("whatsapp_connections").update({"sync_warning": event["detail"]}).eq(
+                "id", conn["id"]
+            ).execute()
+            continue
+        if kind == "history_progress":
+            progress_events.append(event)
+            continue
+        wa_id = event["contact_wa_id"]
+        # Contact import is not marketing consent; preserve existing opt-outs and pause new contacts.
+        db().table("whatsapp_contacts").upsert(
+            {
+                "workspace_id": conn["workspace_id"],
+                "connection_id": conn["id"],
+                "wa_id": wa_id,
+                "automation_paused": True,
+            },
+            on_conflict="connection_id,wa_id",
+            ignore_duplicates=True,
+        ).execute()
+        if kind == "contact_sync":
+            person = contact(conn, wa_id)
+            when = event.get("occurred_at")
+            if when and (
+                not person.get("app_synced_at") or stamp(when) >= stamp(person["app_synced_at"])
+            ):
+                values = {
+                    "name": event["name"] if event["action"] == "add" else "",
+                    "app_synced_at": when,
+                }
+                if event["action"] == "remove":
+                    values["automation_paused"] = True
+                db().table("whatsapp_contacts").update(values).eq("id", person["id"]).execute()
+            db().table("whatsapp_connections").update({"contacts_sync_status": "receiving"}).eq(
+                "id", conn["id"]
+            ).execute()
+            continue
+        if kind == "app_echo":
+            # Staff replied on their phone: suppress queued automation at its delivery check too.
+            db().table("whatsapp_contacts").update({"automation_paused": True}).eq(
+                "connection_id", conn["id"]
+            ).eq("wa_id", wa_id).execute()
+        messages.append(
+            {
+                "workspace_id": conn["workspace_id"],
+                "connection_id": conn["id"],
+                "contact_wa_id": wa_id,
+                "provider_message_id": event["provider_message_id"],
+                "direction": event["direction"],
+                "occurred_at": event["occurred_at"],
+                "message_type": event["message_type"],
+                "text": event["text"],
+                "status": "sent" if event["direction"] == "outbound" else "received",
+                "is_history": kind == "history_message",
+                "purpose": "history" if kind == "history_message" else "phone_app",
+                "detail": "Imported from WhatsApp Business app; media is not downloaded.",
+            }
+        )
+    if messages:
+        unique = {m["provider_message_id"]: m for m in messages}
+        db().table("whatsapp_messages").upsert(
+            list(unique.values()),
+            on_conflict="connection_id,provider_message_id",
+            ignore_duplicates=True,
+        ).execute()
+
+    for event in progress_events:
+        if event["state"] in {"declined", "error"}:
+            db().table("whatsapp_connections").update({"history_sync_status": event["state"]}).eq(
+                "id", conn["id"]
+            ).execute()
+        else:
+            db().table("whatsapp_connections").update(
+                {"history_sync_status": event["state"], "history_sync_progress": event["progress"]}
+            ).eq("id", conn["id"]).lte("history_sync_progress", event["progress"]).execute()
+
+
 async def process_event(record: dict, settings: Settings):
     if (
         not db()
@@ -289,6 +392,32 @@ async def process_event(record: dict, settings: Settings):
         finish_event(record["id"], "ignored", "Connection is inactive")
         return
     event = record["event"]
+    if event["kind"] == "offboarded_number":
+        db().table("whatsapp_connections").update(
+            {
+                "status": "revoked",
+                "ai_enabled": False,
+                "access_token_encrypted": "",
+                "updated_at": now_iso(),
+            }
+        ).eq("id", conn["id"]).execute()
+        db().table("whatsapp_rules").update({"enabled": False}).eq(
+            "connection_id", conn["id"]
+        ).execute()
+        db().table("whatsapp_campaigns").update(
+            {"status": "paused", "detail": "Meta disconnected this account."}
+        ).eq("connection_id", conn["id"]).in_("status", ["scheduled", "running"]).execute()
+        finish_event(
+            record["id"], "processed", "Meta disconnected this account; reconnect before sending."
+        )
+        return
+    if event["kind"] == "coexistence_batch":
+        if conn.get("connection_mode") != "coexistence":
+            finish_event(record["id"], "ignored", "Not a Business app connection")
+            return
+        process_coexistence(conn, event["items"])
+        finish_event(record["id"], "processed")
+        return
     if event["kind"] == "delivery":
         matched = apply_receipt(conn, event)
         if matched:
@@ -320,6 +449,7 @@ async def process_event(record: dict, settings: Settings):
             "connection_id": conn["id"],
             "contact_wa_id": wa_id,
             "direction": "inbound",
+            "is_history": False,
             "provider_message_id": event["provider_message_id"],
             "message_type": event["message_type"],
             "text": event["text"][:4096],
@@ -330,7 +460,8 @@ async def process_event(record: dict, settings: Settings):
         ignore_duplicates=True,
     ).execute()
     db().table("whatsapp_contacts").update({"updated_at": now_iso()}).eq(
-        "connection_id", conn["id"]).eq("wa_id", wa_id).execute()
+        "connection_id", conn["id"]
+    ).eq("wa_id", wa_id).execute()
     person = contact(conn, wa_id)
     text = event["text"].strip()
     if text.casefold().strip(".! ") in STOP_WORDS:
